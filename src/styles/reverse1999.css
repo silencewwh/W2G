@@ -1,0 +1,359 @@
+/* 重返未来1999 风格主题 (Reverse: 1999 Theme) */
+
+@font-face {
+  font-family: 'RetroSong';
+  src: local('Songti SC'), local('SimSun'), local('STSong'), local('Times New Roman');
+}
+
+:root {
+  --bg-color: #0d0f0e;
+  --panel-bg: rgba(20, 24, 22, 0.85);
+  --accent-gold: #cba168;
+  --accent-gold-dim: #8a6b3e;
+  --accent-orange: #d96d00;
+  --text-primary: #e6e6e6;
+  --text-secondary: #999;
+  --border-color: #3d3d3d;
+  --magical-glow: 0 0 10px rgba(203, 161, 104, 0.3);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: 'RetroSong', serif;
+  overflow-x: hidden;
+  /* 抽象的雨滴和几何背景 */
+  background-image: 
+    linear-gradient(to bottom, rgba(13, 15, 14, 0.9), rgba(13, 15, 14, 0.95)),
+    url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M50 0 L100 50 L50 100 L0 50 Z' fill='none' stroke='%23333' stroke-width='0.5'/%3E%3C/svg%3E");
+}
+
+/* 暴雨动画层 */
+.storm-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  background: url("data:image/svg+xml,%3Csvg width='20' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1' height='20' fill='%23ffffff' opacity='0.1'/%3E%3C/svg%3E");
+  animation: rain 1s linear infinite;
+  opacity: 0.2;
+}
+
+@keyframes rain {
+  0% { background-position: 0 0; }
+  100% { background-position: 10px 100px; }
+}
+
+/* 主容器 */
+.app-container {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 装饰性标题 */
+.reverse-title {
+  font-size: 3rem;
+  letter-spacing: 0.2em;
+  color: var(--accent-gold);
+  text-shadow: 0 0 20px rgba(203, 161, 104, 0.5);
+  margin-bottom: 1rem;
+  position: relative;
+  text-align: center;
+}
+.reverse-title::before, .reverse-title::after {
+  content: '✦';
+  font-size: 1.5rem;
+  vertical-align: middle;
+  opacity: 0.6;
+  margin: 0 10px;
+}
+.reverse-subtitle {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  margin-bottom: 3rem;
+  border-bottom: 1px solid var(--accent-gold-dim);
+  padding-bottom: 5px;
+}
+
+/* 通用面板 */
+.glass-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--accent-gold-dim);
+  box-shadow: 
+    0 0 30px rgba(0,0,0,0.8),
+    inset 0 0 20px rgba(203, 161, 104, 0.05);
+  padding: 40px;
+  max-width: 500px;
+  width: 90%;
+  position: relative;
+}
+
+/* 角落装饰 */
+.corner-decor {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--accent-gold);
+  transition: all 0.3s;
+}
+.corner-tl { top: -5px; left: -5px; border-right: none; border-bottom: none; }
+.corner-tr { top: -5px; right: -5px; border-left: none; border-bottom: none; }
+.corner-bl { bottom: -5px; left: -5px; border-right: none; border-top: none; }
+.corner-br { bottom: -5px; right: -5px; border-left: none; border-top: none; }
+
+/* 输入框 */
+.input-field {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--text-secondary);
+  color: var(--accent-gold);
+  font-family: inherit;
+  font-size: 1.2rem;
+  padding: 10px 0;
+  margin-bottom: 20px;
+  transition: all 0.3s;
+}
+.input-field:focus {
+  outline: none;
+  border-bottom-color: var(--accent-gold);
+  background: linear-gradient(to right, rgba(203, 161, 104, 0.1), transparent);
+}
+.input-field::placeholder {
+  color: rgba(231, 231, 231, 0.356);
+  font-style: italic;
+}
+
+/* 按钮 */
+.btn-primary {
+  background: transparent;
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+  padding: 12px 30px;
+  font-family: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary:hover {
+  background: var(--accent-gold);
+  color: #000;
+  box-shadow: 0 0 15px var(--accent-gold);
+}
+.btn-primary:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 布局网格 (房间页) */
+.room-grid {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  gap: 20px;
+  width: 95%;
+  max-width: 1400px;
+  margin: 20px;
+  height: 80vh;
+}
+
+/* 播放器区域 */
+.player-frame {
+  border: 2px solid var(--border-color);
+  background: #000;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.player-wrapper {
+  flex: 1;
+  background: #000;
+  position: relative;
+}
+
+/* 控制栏 */
+.control-bar {
+  height: 60px;
+  background: #111;
+  border-top: 1px solid var(--accent-gold-dim);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 20px;
+}
+
+/* 魔法进度条 */
+.magic-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 2px;
+  background: #333;
+  cursor: pointer;
+}
+.magic-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent-gold);
+  transform: rotate(45deg);
+  margin-top: -5px;
+  box-shadow: 0 0 5px var(--accent-gold);
+}
+
+/* 侧边栏 (神秘学风格) */
+.sidebar {
+  border: 1px solid var(--border-color);
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-header {
+  padding: 15px;
+  border-bottom: 1px solid var(--accent-gold-dim);
+  text-align: center;
+  color: var(--accent-gold);
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.member-list {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+}
+.member-card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid #333;
+  padding: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.2s;
+}
+.member-card:hover {
+  border-color: var(--accent-gold-dim);
+  transform: translateX(5px);
+}
+.avatar-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .room-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .sidebar {
+    height: 300px;
+  }
+}
+
+/* 卢恩符文：从四处聚集到鼠标附近的粒子效果 */
+.rune-particle {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: var(--accent-gold);
+  font-size: 18px;
+  opacity: 1;
+  z-index: 1;
+  text-shadow: 0 0 8px rgba(203, 161, 104, 0.9);
+  transition: opacity 0.3s;
+}
+
+/* 转场与动画 */
+.fade-in {
+  animation: fadeIn 0.8s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 幻觉转场层：金色古朴魔法传送 */
+.hallucination-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  pointer-events: none;
+  /* 金色光辉渐变：中心亮，边缘暗金 */
+  background: radial-gradient(circle, rgba(255, 230, 150, 0.2) 0%, rgba(203, 161, 104, 0.6) 60%, rgba(138, 107, 62, 0.9) 100%);
+  /* 混合模式让它看起来像发光 */
+  mix-blend-mode: screen;
+  animation: golden-teleport 1.2s ease-in-out forwards;
+}
+
+/* 额外的光效层，通过伪元素实现 */
+.hallucination-overlay::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, transparent 30%, rgba(255, 215, 0, 0.4) 70%, transparent 80%);
+  animation: ripple-expand 1.2s ease-out forwards;
+}
+
+@keyframes golden-teleport {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px) sepia(0%);
+    transform: scale(1.1);
+  }
+  40% {
+    opacity: 1;
+    backdrop-filter: blur(8px) sepia(100%) hue-rotate(-5deg) brightness(1.2);
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
+    backdrop-filter: blur(8px) sepia(100%) hue-rotate(-5deg) brightness(1.2);
+  }
+  100% {
+    opacity: 0;
+    backdrop-filter: blur(0px) sepia(0%);
+    transform: scale(1.1);
+  }
+}
+
+@keyframes ripple-expand {
+  0% { width: 0; height: 0; opacity: 0.8; }
+  100% { width: 200vw; height: 200vw; opacity: 0; }
+}
+
+.content-blur {
+  /* 内容在传送时变暗并模糊，突出金色特效 */
+  filter: blur(4px) brightness(0.8);
+  transition: filter 0.6s ease;
+}
