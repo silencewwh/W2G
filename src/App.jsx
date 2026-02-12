@@ -4,6 +4,7 @@ import ReverseLayout from './ReverseLayout'
 import ReactPlayer from 'react-player'
 import mqtt from 'mqtt'
 import './styles/reverse1999.css'
+import bgImage from './assets/bg.png'
 
 // 随机生成神秘学风格的头像文字
 const ICONS = ["✦", "⟡", "☾", "☼", "⚔", "⚖", "⚓", "⚡", "⚛", "⚜"]
@@ -212,38 +213,45 @@ export default function App() {
   const renderContent = () => {
     if (page === 'lobby') {
       return (
-        <div className="lobby-content fade-in">
-          <h1 className="reverse-title">连携：星辰占象</h1>
-          <div className="reverse-subtitle">Synergy: Astral Augury</div>
-          <div className="glass-panel">
-            <div className="corner-decor corner-tl"></div>
-            <div className="corner-decor corner-tr"></div>
-            <div className="corner-decor corner-bl"></div>
-            <div className="corner-decor corner-br"></div>
-            
-            <input
-              className="input-field"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="秘名 (Arcane Name)"
-            />
-            <input
-              className="input-field"
-              value={roomId}
-              onChange={e => setRoomId(e.target.value.toUpperCase())}
-              placeholder="幅频 (Frequency)"
-            />
-            
-            <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '30px' }}>
-              <button className="btn-primary" onClick={handleJoinRoom} disabled={!username.trim() || !roomId.trim()}>
-                感知
-              </button>
-              <button className="btn-primary" onClick={handleCreateRoom} disabled={!username.trim()}>
-                主导
-              </button>
+        <>
+          {/* 背景图层 - 移出 fade-in 容器以避免 position:fixed 失效 (因 transform 创建了新的层叠上下文) */}
+          <div className="lobby-bg" style={{
+            backgroundImage: `url(${bgImage})`,
+          }}></div>
+
+          <div className="lobby-content fade-in">
+            <h1 className="reverse-title">连携：星辰占象</h1>
+            <div className="reverse-subtitle">Synergy: Astral Augury</div>
+            <div className="glass-panel">
+              <div className="corner-decor corner-tl"></div>
+              <div className="corner-decor corner-tr"></div>
+              <div className="corner-decor corner-bl"></div>
+              <div className="corner-decor corner-br"></div>
+              
+              <input
+                className="input-field"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="秘名 (Arcane Name)"
+              />
+              <input
+                className="input-field"
+                value={roomId}
+                onChange={e => setRoomId(e.target.value.toUpperCase())}
+                placeholder="幅频 (Frequency)"
+              />
+              
+              <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '30px' }}>
+                <button className="btn-primary" onClick={handleJoinRoom} disabled={!username.trim() || !roomId.trim()}>
+                  感知
+                </button>
+                <button className="btn-primary" onClick={handleCreateRoom} disabled={!username.trim()}>
+                  主导
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )
     }
 

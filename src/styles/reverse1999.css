@@ -26,28 +26,11 @@ body {
   overflow-x: hidden;
   /* 抽象的雨滴和几何背景 */
   background-image: 
-    linear-gradient(to bottom, rgba(13, 15, 14, 0.9), rgba(13, 15, 14, 0.95)),
-    url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M50 0 L100 50 L50 100 L0 50 Z' fill='none' stroke='%23333' stroke-width='0.5'/%3E%3C/svg%3E");
+    linear-gradient(to bottom, rgba(13, 15, 14, 0.9), rgba(13, 15, 14, 0.95));
 }
 
-/* 暴雨动画层 */
-.storm-layer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-  background: url("data:image/svg+xml,%3Csvg width='20' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1' height='20' fill='%23ffffff' opacity='0.1'/%3E%3C/svg%3E");
-  animation: rain 1s linear infinite;
-  opacity: 0.2;
-}
-
-@keyframes rain {
-  0% { background-position: 0 0; }
-  100% { background-position: 10px 100px; }
-}
+/* 暴雨动画层 (已移除) */
+/* .storm-layer { ... } */
 
 /* 主容器 */
 .app-container {
@@ -58,6 +41,20 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* 大厅背景图 */
+.lobby-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  z-index: -1;
+  opacity: 0.1;
+  pointer-events: none;
 }
 
 /* 装饰性标题 */
@@ -261,14 +258,89 @@ body {
   font-size: 14px;
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
+/* 响应式优化 */
+
+/* iPad Air 7 等平板设备优化 (宽度 768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .room-grid {
+    /* 平板竖屏时，如果宽度较窄，使用堆叠布局；如果宽度足够，保持侧边栏比例 */
+    grid-template-columns: 1fr 220px; /* 稍微缩小侧边栏以给播放器更多空间 */
+    gap: 15px;
+    height: 85vh; /* 增加高度利用率 */
+    width: 98%; /* 增加宽度利用率 */
+  }
+  
+  .player-frame {
+    /* 确保播放器区域有足够高度 */
+    min-height: 50vh;
+  }
+}
+
+/* 手机设备优化 (宽度 < 768px) */
+@media (max-width: 767px) {
+  .reverse-title {
+    font-size: 2rem; /* 减小标题字号 */
+    margin-bottom: 0.5rem;
+  }
+  
+  .glass-panel {
+    padding: 20px; /* 减小内边距 */
+    width: 95%;
+  }
+
   .room-grid {
     grid-template-columns: 1fr;
     height: auto;
+    margin: 10px;
+    width: 95%;
   }
+
+  .player-frame {
+    /* 手机端保持 16:9 比例容器，防止塌陷 */
+    aspect-ratio: 16/9;
+    min-height: auto; /* 重置可能的高度限制 */
+  }
+  
+  /* 在手机竖屏下，控制栏可能需要换行 */
+  .control-bar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 10px;
+    gap: 10px;
+  }
+  
   .sidebar {
-    height: 300px;
+    height: 300px; /* 限制侧边栏高度 */
+    margin-top: 20px;
+  }
+}
+
+/* 荣耀90 SE 等小屏高密度手机优化 (宽度 < 480px) */
+@media (max-width: 480px) {
+  .reverse-title {
+    font-size: 1.8rem;
+    letter-spacing: 0.1em;
+  }
+  
+  .input-field {
+    font-size: 1rem;
+  }
+
+  /* 调整按钮大小以适应手指点击 */
+  .btn-primary {
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    min-width: auto !important; /* 覆盖内联样式 */
+  }
+  
+  .control-bar {
+    justify-content: space-between;
+  }
+  
+  .magic-slider {
+    width: 100%; /* 进度条独占一行 */
+    order: 10; /* 放到最后 */
+    margin-top: 10px;
   }
 }
 
@@ -280,7 +352,7 @@ body {
   transform: translate(-50%, -50%);
   pointer-events: none;
   color: var(--accent-gold);
-  font-size: 18px;
+  font-size: 5vmin;
   opacity: 1;
   z-index: 1;
   text-shadow: 0 0 8px rgba(203, 161, 104, 0.9);
@@ -296,7 +368,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 幻觉转场层：金色古朴魔法传送 */
+/* 幻觉转场层：魔法环收缩 */
 .hallucination-overlay {
   position: fixed;
   top: 0;
@@ -305,51 +377,132 @@ body {
   height: 100vh;
   z-index: 9999;
   pointer-events: none;
-  /* 金色光辉渐变：中心亮，边缘暗金 */
-  background: radial-gradient(circle, rgba(255, 230, 150, 0.2) 0%, rgba(203, 161, 104, 0.6) 60%, rgba(138, 107, 62, 0.9) 100%);
-  /* 混合模式让它看起来像发光 */
-  mix-blend-mode: screen;
-  animation: golden-teleport 1.2s ease-in-out forwards;
+  background: rgba(0, 0, 0, 0.85); /* 移除 backdrop-filter 以提升性能，并加深背景色作为补偿 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: opacity; /* 提示浏览器优化 */
+  animation: fadeOverlay 2s ease-in-out forwards;
 }
 
-/* 额外的光效层，通过伪元素实现 */
-.hallucination-overlay::after {
-  content: '';
+@keyframes fadeOverlay {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 魔法环容器 */
+.magic-circle-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform, opacity; /* 性能优化 */
+  /* 整体缩小动画：更流畅的贝塞尔曲线 */
+  animation: circleShrink 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* 外圈装饰 */
+.magic-circle.outer {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 100%;
-  height: 100%;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, transparent 30%, rgba(255, 215, 0, 0.4) 70%, transparent 80%);
-  animation: ripple-expand 1.2s ease-out forwards;
+  width: 70vmin;
+  height: 70vmin;
+  border-radius: 50%;
+  border: 2px dashed var(--accent-gold);
+  opacity: 0.8;
+  will-change: transform; /* 性能优化 */
+  animation: spin 20s linear infinite;
+  box-shadow: 0 0 20px rgba(203, 161, 104, 0.3);
 }
 
-@keyframes golden-teleport {
+/* 内圈实体 */
+.magic-circle.inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60vmin;
+  height: 60vmin;
+  border-radius: 50%;
+  border: 4px solid var(--accent-gold);
+  box-shadow: 
+    0 0 30px var(--accent-gold), /* 减小阴影半径以提升性能 */
+    inset 0 0 20px var(--accent-gold);
+  will-change: transform; /* 性能优化 */
+  animation: spinReverse 15s linear infinite;
+  background: radial-gradient(circle, transparent 40%, rgba(203, 161, 104, 0.1) 70%);
+}
+
+/* 符文环容器 */
+.rune-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* 确保不影响布局 */
+  width: 0;
+  height: 0;
+  will-change: transform; /* 性能优化 */
+  /* 整体旋转 */
+  animation: spin 30s linear infinite;
+}
+
+/* 单个符文文字 */
+.rune-char {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* 移除 transform-origin: 0 0，让其默认围绕自身中心 (50% 50%) 旋转，
+     配合 margin 居中定位，即可确保围绕圆心旋转 */
+  color: var(--accent-gold);
+  font-size: 5vmin; /* 响应式字体大小 */
+  font-weight: bold;
+  /* 减小 text-shadow 半径以提升性能 */
+  text-shadow: 0 0 8px var(--accent-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 6vmin;
+  height: 6vmin;
+  margin-top: -3vmin; 
+  margin-left: -3vmin;
+  /* 添加微小的自身闪烁/浮动动画 */
+  animation: runePulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes circleShrink {
   0% {
+    transform: scale(1.5);
     opacity: 0;
-    backdrop-filter: blur(0px) sepia(0%);
-    transform: scale(1.1);
   }
-  40% {
-    opacity: 1;
-    backdrop-filter: blur(8px) sepia(100%) hue-rotate(-5deg) brightness(1.2);
+  15% {
     transform: scale(1);
-  }
-  60% {
     opacity: 1;
-    backdrop-filter: blur(8px) sepia(100%) hue-rotate(-5deg) brightness(1.2);
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
   }
   100% {
+    transform: scale(0.01); /* 缩小到几乎消失 */
     opacity: 0;
-    backdrop-filter: blur(0px) sepia(0%);
-    transform: scale(1.1);
   }
 }
 
-@keyframes ripple-expand {
-  0% { width: 0; height: 0; opacity: 0.8; }
-  100% { width: 200vw; height: 200vw; opacity: 0; }
+@keyframes runePulse {
+  from { opacity: 0.8; text-shadow: 0 0 10px var(--accent-gold); }
+  to { opacity: 1; text-shadow: 0 0 25px var(--accent-gold), 0 0 5px #fff; }
+}
+
+@keyframes spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes spinReverse {
+  from { transform: translate(-50%, -50%) rotate(360deg); }
+  to { transform: translate(-50%, -50%) rotate(0deg); }
 }
 
 .content-blur {

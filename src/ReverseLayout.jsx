@@ -3,11 +3,8 @@ import React, { useEffect } from 'react'
 
 export default function ReverseLayout({ children, enableRunes = false, isTransitioning = false }) {
   useEffect(() => {
-    // 只有在需要符文的时候才启动
-    if (!enableRunes) return
-
-    // 真·卢恩符文字符
-    const RUNES = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ']
+    // 真·卢恩符文字符 (剔除乱码)
+    const RUNES = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', '🜄', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᯣ', 'ᛇ', 'ᛈ', 'ᛉ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛗ', 'ᛚ', '𛆁', 'ᛟ', 'ᛞ']
 
     // 当前所有符文粒子
     const runes = []
@@ -15,7 +12,7 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
     // 参数配置
     const NUM_RUNES = 35            // 屏幕上保持的符文数量
     const BASE_SPEED = 0.2          // 初始基础速度
-    const NOISE = 0.05              // 漂浮噪声
+    const NOISE = 0.1             // 漂浮噪声
     const DAMPING = 0.96            // 阻尼
 
     const FADE_IN = 800             // 淡入时间（ms）
@@ -24,8 +21,8 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
     const LIFE_MAX = 8000           // 最长生命周期
 
     // 点击吸引脉冲参数
-    const PULSE_FORCE = 0.35        // 吸引力度
-    const PULSE_DURATION = 600      // 吸引持续时间（ms）
+    const PULSE_FORCE = 0.15        // 吸引力度
+    const PULSE_DURATION = 200      // 吸引持续时间（ms）
     const PULSE_RADIUS = 300        // 有效吸引半径
 
     let pulseTargetX = null
@@ -35,13 +32,39 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
 
     const randomLife = () => LIFE_MIN + Math.random() * (LIFE_MAX - LIFE_MIN)
 
+    // 检查位置是否在中心区域（避开框）
+    const isInRestrictedArea = (x, y) => {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      // 中心 60% 宽度和 80% 高度视为“框”的区域，避免符文进入
+      // 这里的框可能是指登录框或中间的主要内容区域
+      // 简单起见，我们定义一个中心矩形区域，符文不应该出现在这里
+      const centerX = w / 2
+      const centerY = h / 2
+      const restrictedWidth = 600  // 假设框宽约 500-600px
+      const restrictedHeight = 500 // 假设框高约 400-500px
+
+      return (
+        x > centerX - restrictedWidth / 2 &&
+        x < centerX + restrictedWidth / 2 &&
+        y > centerY - restrictedHeight / 2 &&
+        y < centerY + restrictedHeight / 2
+      )
+    }
+
     // 生成一个新的符文
     const spawnRune = () => {
       const w = window.innerWidth
       const h = window.innerHeight
 
-      const x = Math.random() * w
-      const y = Math.random() * h
+      let x, y
+      let attempts = 0
+      // 尝试生成不在限制区域内的坐标
+      do {
+        x = Math.random() * w
+        y = Math.random() * h
+        attempts++
+      } while (isInRestrictedArea(x, y) && attempts < 10)
 
       // 初始随机漂浮方向
       const angle = Math.random() * Math.PI * 2
@@ -57,6 +80,8 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
       // 初始状态：透明，配合 JS 渐入
       el.style.opacity = '0'
       el.style.transform = 'translate(-50%, -50%) scale(0.8)'
+      // 降低 z-index 确保不挡住内容，虽然逻辑上避开了，但在层级上也保证
+      el.style.zIndex = '0' 
 
       document.body.appendChild(el)
 
@@ -141,11 +166,28 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
         vx = vx * DAMPING + (Math.random() - 0.5) * NOISE
         vy = vy * DAMPING + (Math.random() - 0.5) * NOISE
 
-        x += vx
-        y += vy
+        let nextX = x + vx
+        let nextY = y + vy
 
-        // 简单的边界处理：如果飘出太远就直接结束生命，或者让它自然消失
-        // 这里不做特殊边界反弹，让它自然生灭更像魔法背景
+        // 简单的避让逻辑：如果将要进入中心区域，给一个反向力
+        if (isInRestrictedArea(nextX, nextY)) {
+           // 计算中心点向量
+           const centerX = w / 2
+           const centerY = h / 2
+           const dx = nextX - centerX
+           const dy = nextY - centerY
+           
+           // 简单的排斥力，推向远离中心的方向
+           vx += (dx > 0 ? 1 : -1) * 0.1
+           vy += (dy > 0 ? 1 : -1) * 0.1
+           
+           // 更新位置稍微保守一点
+           nextX = x + vx
+           nextY = y + vy
+        }
+
+        x = nextX
+        y = nextY
 
         rune.x = x
         rune.y = y
@@ -180,17 +222,35 @@ export default function ReverseLayout({ children, enableRunes = false, isTransit
       if (rafId) cancelAnimationFrame(rafId)
       runes.forEach(({ el }) => el.remove())
     }
-  }, [enableRunes])
+  }, []) // Removed dependency on enableRunes so it runs always
+
+  // 生成转场用的符文环数据
+  const transitionRunes = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛟᛞ'.split('')
 
   return (
     <>
-      {/* 暴雨层 */}
-      <div className="storm-layer"></div>
-      
       {/* 幻觉转场层 */}
-      {isTransitioning && <div className="hallucination-overlay"></div>}
-
-      {/* 主应用容器 */}
+      {isTransitioning && (
+        <div className="hallucination-overlay">
+          <div className="magic-circle-container">
+             <div className="magic-circle outer"></div>
+             <div className="magic-circle inner"></div>
+             <div className="rune-ring">
+              {transitionRunes.map((char, i) => (
+                <span 
+                  key={i} 
+                  className="rune-char"
+                  style={{ 
+                    transform: `rotate(${i * (360 / transitionRunes.length)}deg) translateY(-35vmin)` 
+                  }}
+                >
+                  {char}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <div className={`app-container ${isTransitioning ? 'content-blur' : ''}`}>
         {children}
       </div>
