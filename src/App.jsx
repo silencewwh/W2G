@@ -1,10 +1,8 @@
 // src/App.jsx
 import React, { useState, useEffect, useRef } from 'react'
 import ReverseLayout from './ReverseLayout'
-import ReactPlayer from 'react-player'
 import mqtt from 'mqtt'
 import './styles/reverse1999.css'
-import bgImage from './assets/bg.png'
 
 // 随机生成神秘学风格的头像文字
 const ICONS = ["✦", "⟡", "☾", "☼", "⚔", "⚖", "⚓", "⚡", "⚛", "⚜"]
@@ -22,21 +20,65 @@ export default function App() {
   const [username, setUsername] = useState('')
   const [isHost, setIsHost] = useState(false)
   
+  // 检查是否为悬浮层模式
+  const [isOverlay, setIsOverlay] = useState(false)
+
   // 转场动画状态
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [copyTip, setCopyTip] = useState('')
 
-  // 播放器状态
-  const [videoUrl, setVideoUrl] = useState('') 
-  const [inputUrl, setInputUrl] = useState('') 
+  // 播放器状态 (仅用于同步逻辑，不渲染)
   const [playing, setPlaying] = useState(false)
   const [played, setPlayed] = useState(0) 
-  const [seeking, setSeeking] = useState(false)
+  // 标记是否正在处理 MQTT 指令，防止回环广播
+  const isRemoteRef = useRef(false)
   
   // 成员列表
   const [members, setMembers] = useState(new Map())
-
-  const playerRef = useRef(null)
   const clientRef = useRef(null) 
+
+  // 初始化检查
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('overlay') === 'true') {
+      setIsOverlay(true)
+      document.body.style.backgroundColor = 'transparent'
+      document.documentElement.style.backgroundColor = 'transparent'
+    }
+  }, [])
+
+  // 监听来自父页面的视频事件 (Overlay Mode Only)
+  useEffect(() => {
+    if (!isOverlay) return
+
+    const handleParentMessage = (event) => {
+      const { type, payload } = event.data
+      if (!type) return
+
+      // 如果当前是由远程指令触发的，则不广播
+      if (isRemoteRef.current) return
+
+      switch (type) {
+        case 'W2G_EVENT_PLAY':
+          setPlaying(true)
+          if (page === 'room') publishMessage({ type: 'PLAY', played: payload.currentTime }) // 注意：这里发的是 currentTime 而不是 percentage
+          break
+        case 'W2G_EVENT_PAUSE':
+          setPlaying(false)
+          if (page === 'room') publishMessage({ type: 'PAUSE', played: payload.currentTime })
+          break
+        case 'W2G_EVENT_SEEKED':
+           if (page === 'room') publishMessage({ type: 'SEEK', to: payload.currentTime })
+          break
+        case 'W2G_EVENT_PROGRESS':
+          setPlayed(payload.played)
+          break
+      }
+    }
+
+    window.addEventListener('message', handleParentMessage)
+    return () => window.removeEventListener('message', handleParentMessage)
+  }, [isOverlay, page, roomId]) // 依赖项
 
   // MQTT 连接
   useEffect(() => {
@@ -65,12 +107,19 @@ export default function App() {
       })
 
       client.on('message', (topic, message) => {
-        handleMqttMessage(JSON.parse(message.toString()))
+        try {
+          handleMqttMessage(JSON.parse(message.toString()))
+        } catch (err) {
+          console.error('[W2G] MQTT message parse failed:', err)
+        }
       })
 
-      return () => client.end()
+      return () => {
+        client.end()
+        clientRef.current = null
+      }
     }
-  }, [page, roomId])
+  }, [page, roomId, username, isHost])
 
   const publishMessage = (msg) => {
     if (clientRef.current && roomId) {
@@ -83,6 +132,19 @@ export default function App() {
     }
   }
 
+  const handleCopyRoomId = async () => {
+    if (!roomId) return
+    try {
+      await navigator.clipboard.writeText(roomId)
+      setCopyTip('已复制')
+    } catch (err) {
+      console.error('[W2G] 复制房间号失败:', err)
+      setCopyTip('复制失败')
+    } finally {
+      setTimeout(() => setCopyTip(''), 1200)
+    }
+  }
+
   const handleMqttMessage = (data) => {
     // 更新成员列表
     if (['GUEST_JOIN', 'PRESENCE'].includes(data.type) && data.sender) {
@@ -92,7 +154,6 @@ export default function App() {
         return newMap
       })
 
-      // 回复 PRESENCE
       if (data.type === 'GUEST_JOIN' && data.sender !== username) {
         setTimeout(() => publishMessage({ type: 'PRESENCE', isHost }), Math.random() * 500)
       }
@@ -100,99 +161,77 @@ export default function App() {
 
     if (data.sender === username) return 
 
-    switch (data.type) {
-      case 'SET_URL':
-        setVideoUrl(data.url)
-        setPlaying(false)
-        setPlayed(0)
-        break
-      case 'PLAY':
-        setPlaying(true)
-        if (typeof data.played !== 'undefined' && playerRef.current) {
-          const diff = Math.abs(playerRef.current.getCurrentTime() - (data.played * playerRef.current.getDuration()))
-          if (diff > 2) playerRef.current.seekTo(data.played, 'fraction')
+    // 标记为远程操作，防止回环
+    isRemoteRef.current = true;
+    setTimeout(() => { isRemoteRef.current = false }, 1000); // 1秒冷却
+
+    // 处理同步指令 -> 控制本地网页播放器
+    if (isOverlay) {
+        switch (data.type) {
+        case 'PLAY':
+            setPlaying(true)
+            sendCommandToParent('W2G_COMMAND_PLAY')
+            // 如果有进度信息，顺便同步一下
+            if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: true, isTime: true }) 
+            break
+        case 'PAUSE':
+            setPlaying(false)
+            sendCommandToParent('W2G_COMMAND_PAUSE')
+            if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: false, isTime: true })
+            break
+        case 'SEEK':
+            sendCommandToParent('W2G_COMMAND_SEEK', data.to) // data.to 是 currentTime
+            break
+        case 'SYNC_STATE': 
+            // 收到权威状态同步
+            if (!isHost) {
+                if (typeof data.playing !== 'undefined') {
+                    setPlaying(data.playing)
+                    sendCommandToParent(data.playing ? 'W2G_COMMAND_PLAY' : 'W2G_COMMAND_PAUSE')
+                }
+                if (typeof data.played !== 'undefined') {
+                    // data.played 在这里应该是 currentTime 或 percentage，需要统一
+                    // 假设是 percentage
+                    sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: data.playing })
+                }
+            }
+            break
         }
-        break
-      case 'PAUSE':
-        setPlaying(false)
-        if (typeof data.played !== 'undefined' && playerRef.current) {
-           playerRef.current.seekTo(data.played, 'fraction')
-           setPlayed(data.played)
-        }
-        break
-      case 'SEEK':
-        if (playerRef.current) {
-          playerRef.current.seekTo(data.to, 'fraction')
-          setPlayed(data.to)
-        }
-        break
-      case 'SYNC_STATE': 
-        if (!isHost) {
-          if (data.url && data.url !== videoUrl) setVideoUrl(data.url)
-          if (typeof data.playing !== 'undefined') setPlaying(data.playing)
-          if (typeof data.played !== 'undefined' && playerRef.current) {
-             const duration = playerRef.current.getDuration()
-             if (duration && Math.abs(playerRef.current.getCurrentTime() - (data.played * duration)) > 1) {
-               playerRef.current.seekTo(data.played, 'fraction')
-             }
-          }
-        }
-        break
     }
 
-    // 房主同步状态给新人
+    // 房主同步状态给新人 (无需修改，只需要发送当前状态)
     if (data.type === 'GUEST_JOIN' && isHost && data.sender !== username) {
-      const currentProgress = playerRef.current ? (playerRef.current.getCurrentTime() / playerRef.current.getDuration()) : 0
-      publishMessage({
-        type: 'SYNC_STATE',
-        url: videoUrl,
-        playing: playing,
-        played: currentProgress || 0
-      })
+        // 请求父页面返回当前状态用于同步 (这里简化，假设 playing 和 played 状态是最新的)
+        publishMessage({
+            type: 'SYNC_STATE',
+            playing: playing,
+            played: played // 这个是 percentage
+        })
     }
   }
 
-  // 播放器回调
-  const handlePlay = () => {
-    setPlaying(true)
-    publishMessage({ type: 'PLAY', played: played })
+  // 发送指令给父页面 (Content Script)
+  const sendCommandToParent = (type, payload = null) => {
+    window.parent.postMessage({ type, payload }, '*')
   }
 
-  const handlePause = () => {
-    setPlaying(false)
-    publishMessage({ type: 'PAUSE', played: played })
+  const handleMinimize = () => {
+    sendCommandToParent('W2G_COMMAND_MINIMIZE')
   }
 
-  const handleSeekChange = (e) => setPlayed(parseFloat(e.target.value))
-  const handleSeekMouseDown = () => setSeeking(true)
-  const handleSeekMouseUp = (e) => {
-    setSeeking(false)
-    const to = parseFloat(e.target.value)
-    if (playerRef.current) playerRef.current.seekTo(to, 'fraction')
-    publishMessage({ type: 'SEEK', to: to })
-  }
-  const handleProgress = (state) => { if (!seeking) setPlayed(state.played) }
-  
-  const handleUrlSubmit = () => {
-    if (!isHost) return
-    if (inputUrl && inputUrl !== videoUrl) {
-      setVideoUrl(inputUrl)
-      setPlayed(0)
-      setPlaying(false)
-      publishMessage({ type: 'SET_URL', url: inputUrl })
-    }
+  const handleClose = () => {
+    sendCommandToParent('W2G_COMMAND_CLOSE')
   }
 
-  // 页面切换逻辑（含动画）
+  // 页面切换逻辑
   const switchPage = (targetPage) => {
     setIsTransitioning(true)
     setTimeout(() => {
       setPage(targetPage)
-      // 这里的 setTimeout 时间应该与 CSS 动画时间匹配
       setTimeout(() => {
         setIsTransitioning(false)
-      }, 500) // 结束动画
-    }, 500) // 进场动画时间
+      }, 500) 
+    }, 500) 
   }
 
   const handleCreateRoom = () => {
@@ -209,154 +248,139 @@ export default function App() {
     switchPage('room')
   }
 
+  const handleLeaveRoom = () => {
+      if (clientRef.current) {
+          clientRef.current.end();
+      }
+      setMembers(new Map());
+      setRoomId('');
+      setIsHost(false);
+      switchPage('lobby');
+  }
+
   // 渲染内容
   const renderContent = () => {
     if (page === 'lobby') {
       return (
-        <>
-          {/* 背景图层 - 移出 fade-in 容器以避免 position:fixed 失效 (因 transform 创建了新的层叠上下文) */}
-          <div className="lobby-bg" style={{
-            backgroundImage: `url(${bgImage})`,
-          }}></div>
+        <div className="lobby-content fade-in" style={{ width: '100%', height: '100%', padding: '15px 25px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          
+          <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 30, display: 'flex', gap: '8px' }}>
+             <button className="btn-icon" onClick={handleMinimize} style={{ background: 'transparent', border: 'none', color: '#cba168', fontSize: '1.2rem', cursor: 'pointer' }}>
+                ━
+             </button>
+             <button className="btn-icon" onClick={handleClose} style={{ background: 'transparent', border: 'none', color: '#cba168', fontSize: '1.2rem', cursor: 'pointer' }}>
+                ✕
+             </button>
+          </div>
 
-          <div className="lobby-content fade-in">
-            <h1 className="reverse-title">连携：星辰占象</h1>
-            <div className="reverse-subtitle">Synergy: Astral Augury</div>
-            <div className="glass-panel">
-              <div className="corner-decor corner-tl"></div>
-              <div className="corner-decor corner-tr"></div>
-              <div className="corner-decor corner-bl"></div>
-              <div className="corner-decor corner-br"></div>
-              
-              <input
-                className="input-field"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="秘名 (Arcane Name)"
-              />
-              <input
-                className="input-field"
-                value={roomId}
-                onChange={e => setRoomId(e.target.value.toUpperCase())}
-                placeholder="幅频 (Frequency)"
-              />
-              
-              <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '30px' }}>
-                <button className="btn-primary" onClick={handleJoinRoom} disabled={!username.trim() || !roomId.trim()}>
-                  感知
-                </button>
-                <button className="btn-primary" onClick={handleCreateRoom} disabled={!username.trim()}>
-                  主导
-                </button>
-              </div>
+          <h1 className="reverse-title" style={{ fontSize: '1.8rem', marginBottom: '5px' }}>连携：星辰占象</h1>
+          <div className="reverse-subtitle" style={{ marginBottom: '30px' }}>Synergy: Astral Augury</div>
+          
+          <div className={`glass-panel ${isOverlay ? 'overlay-panel' : ''}`} style={{ width: '100%', padding: '20px 40px' }}>
+            <input
+              className="input-field"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="秘名 (Arcane Name)"
+              style={{ marginBottom: '15px' }}
+            />
+            <input
+              className="input-field"
+              value={roomId}
+              onChange={e => setRoomId(e.target.value.toUpperCase())}
+              placeholder="幅频 (Frequency)"
+              style={{ marginBottom: '25px' }}
+            />
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: 'center' }}>
+              <button className="btn-primary" onClick={handleCreateRoom} disabled={!username.trim()} style={{ width: '100%' }}>
+                主导 (Host)
+              </button>
+              <button className="btn-primary" onClick={handleJoinRoom} disabled={!username.trim() || !roomId.trim()} style={{ width: '100%' }}>
+                感知 (Join)
+              </button>
             </div>
           </div>
-        </>
+        </div>
       )
     }
 
+    // Room 界面
     return (
-      <div className="room-grid fade-in">
-        {/* 左侧：播放器区域 */}
-        <div className="player-frame">
-          <div style={{ padding: '10px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', color: '#cba168' }}>
-            <span>频率: {roomId}</span>
-            <span>代号: {username}</span>
-          </div>
-          
-          <div className="player-wrapper">
-            {videoUrl ? (
-              <ReactPlayer
-                ref={playerRef}
-                url={videoUrl}
-                width="100%"
-                height="100%"
-                playing={playing}
-                controls={false}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onProgress={handleProgress}
-                muted={false} 
-              />
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666', flexDirection: 'column' }}>
-                <div style={{ fontSize: '3rem', opacity: 0.5 }}>✦</div>
-                <div style={{ marginTop: '10px' }}>等待影像输入...</div>
-              </div>
-            )}
-          </div>
-
-          <div className="control-bar">
-            <button 
-              className="btn-primary" 
-              style={{ padding: '5px 15px', fontSize: '0.8rem', minWidth: '60px', marginRight: '10px' }}
-              onClick={() => switchPage('lobby')}
-            >
-              ← 返回
-            </button>
-
-            <button 
-              className="btn-primary" 
-              style={{ padding: '5px 15px', fontSize: '0.8rem', minWidth: '80px' }}
-              onClick={() => playing ? handlePause() : handlePlay()}
-            >
-              {playing ? '暂停' : '播放'}
-            </button>
-            
-            <input
-              type='range' min={0} max={0.999999} step='any'
-              value={played}
-              onMouseDown={handleSeekMouseDown}
-              onChange={handleSeekChange}
-              onMouseUp={handleSeekMouseUp}
-              className="magic-slider"
-            />
-            
-            {isHost && (
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input 
-                  className="input-field" 
-                  style={{ width: '200px', fontSize: '0.9rem', margin: 0, padding: '5px' }}
-                  placeholder="输入影像链接..." 
-                  value={inputUrl}
-                  onChange={(e) => setInputUrl(e.target.value)}
-                />
-                <button 
-                  className="btn-primary" 
-                  style={{ padding: '5px 10px', fontSize: '0.8rem' }}
-                  onClick={handleUrlSubmit}
-                >
-                  投射
+      <div className="room-grid fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px' }}>
+        
+        {/* 1. 顶部信息栏 */}
+        <div style={{ 
+            padding: '15px', 
+            borderBottom: '1px solid rgba(203, 161, 104, 0.3)', 
+            marginBottom: '10px',
+            background: 'rgba(0,0,0,0.4)',
+            borderRadius: '8px',
+            position: 'relative'
+        }}>
+            <div style={{ position: 'relative', right: '-300px', zIndex: 30, display: 'flex', gap: '8px' }}>
+                <button className="btn-icon" onClick={handleMinimize} style={{ background: 'transparent', border: 'none', color: '#cba168', fontSize: '1.2rem', cursor: 'pointer' }}>
+                    ━
                 </button>
-              </div>
-            )}
-          </div>
+                <button className="btn-icon" onClick={handleClose} style={{ background: 'transparent', border: 'none', color: '#cba168', fontSize: '1.2rem', cursor: 'pointer' }}>
+                    ✕
+                </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                <span style={{ color: '#cba168', fontWeight: 'bold' }}>幅频 (Frequency)</span>
+                <span
+                  style={{ fontFamily: 'monospace', fontSize: '1.2rem' ,color: '#cba168', cursor: 'pointer' }}
+                  title="点击复制幅频"
+                  onClick={handleCopyRoomId}
+                >
+                  {roomId}{copyTip ? ` (${copyTip})` : ''}
+                </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#888' }}>秘名 (User)</span>
+                <span>{username} </span>
+            </div>
         </div>
 
-        {/* 右侧：成员列表 */}
-        <div className="sidebar">
-          <div className="sidebar-header">
-            行动小队 ({members.size})
+        {/* 2. 成员列表 */}
+        <div className="sidebar" style={{ flex: '1 1 auto', overflowY: 'auto', marginBottom: '10px', background: 'rgba(0,0,0,0.2)', padding: '5px', borderRadius: '8px' }}>
+          <div className="sidebar-header" style={{ fontSize: '0.9rem', padding: '5px 8px', marginBottom: '5px' }}>
+            众仪 ({members.size})
           </div>
-          <div className="member-list">
+          <div className="member-list" style={{ padding: '0 5px' }}>
             {Array.from(members.values()).map(m => (
-              <div key={m.username} className="member-card">
-                <div className="avatar-icon">{m.avatar}</div>
+              <div key={m.username} className="member-card" style={{ padding: '8px', marginBottom: '5px' }}>
+                <div className="avatar-icon" style={{ width: '30px', height: '30px', fontSize: '1rem' }}>{m.avatar}</div>
                 <div>
-                  <div style={{ color: '#e6e6e6' }}>{m.username}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#cba168' }}>{m.isHost ? '队长' : '队员'}</div>
+                  <div style={{ color: '#e6e6e6', fontSize: '0.9rem' }}>{m.username}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#cba168' }}>{m.isHost ? '主导者' : '观察者'}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* 3. 底部退出按钮 */}
+        <div style={{ flex: '0 0 auto', marginTop: 'auto' }}>
+            <button 
+                className="btn-primary" 
+                onClick={handleLeaveRoom}
+                style={{ width: '100%', padding: '12px', background: 'rgba(255, 50, 50, 0.2)', borderColor: '#ff4444' }}
+            >
+                断开连接 (Disconnect)
+            </button>
+        </div>
       </div>
     )
   }
 
+  // 包装器
   return (
-    <ReverseLayout enableRunes={page === 'lobby'} isTransitioning={isTransitioning}>
-      {renderContent()}
+    <ReverseLayout isTransitioning={isTransitioning}>
+      <div className={`app-container ${isTransitioning ? 'transitioning' : ''}`} style={{ width: '100%', height: '100%', overflow: 'hidden', background: isOverlay ? 'rgba(20, 20, 20, 0.95)' : 'transparent', borderRadius: '12px' }}>
+          {renderContent()}
+      </div>
     </ReverseLayout>
   )
 }

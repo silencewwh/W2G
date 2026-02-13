@@ -1,1 +1,22 @@
-/* Reset handled in reverse1999.css */
+/* src/index.css */
+html, body, #root {
+  width: 400px;
+  height: 600px;
+  overflow: hidden !important;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* 彻底隐藏所有滚动条 */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+  box-sizing: border-box;
+}

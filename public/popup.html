@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>W2G Control</title>
+    <style>
+        body {
+            width: 200px;
+            padding: 15px;
+            background-color: #1a1a1a;
+            color: #cba168;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(203, 161, 104, 0.1);
+            border: 1px solid #cba168;
+            color: #cba168;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        button:hover {
+            background: rgba(203, 161, 104, 0.3);
+            box-shadow: 0 0 10px rgba(203, 161, 104, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <h2>Watch Together</h2>
+    <button id="toggleBtn">显示/隐藏 悬浮窗</button>
+    <script src="popup.js"></script>
+</body>
+</html>

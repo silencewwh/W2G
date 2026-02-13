@@ -1,3 +1,5 @@
+/* src/styles/reverse1999.css */
+
 /* 重返未来1999 风格主题 (Reverse: 1999 Theme) */
 
 @font-face {
@@ -23,24 +25,24 @@ body {
   background-color: var(--bg-color);
   color: var(--text-primary);
   font-family: 'RetroSong', serif;
-  overflow-x: hidden;
-  /* 抽象的雨滴和几何背景 */
+  overflow: hidden; /* 强制隐藏 */
+  
   background-image: 
     linear-gradient(to bottom, rgba(13, 15, 14, 0.9), rgba(13, 15, 14, 0.95));
 }
-
-/* 暴雨动画层 (已移除) */
-/* .storm-layer { ... } */
 
 /* 主容器 */
 .app-container {
   position: relative;
   z-index: 10;
-  min-height: 100vh;
+  width: 400px;
+  height: 600px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box; 
+  overflow: hidden; /* 强制隐藏 */
 }
 
 /* 大厅背景图 */
@@ -57,6 +59,19 @@ body {
   pointer-events: none;
 }
 
+/* 大厅内容区：在 400x600 内居中撑满 */
+.lobby-content {
+  width: 100%;
+  height: 100%;
+  padding: 12px 18px; 
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;   
+  align-items: stretch;
+  overflow: hidden; /* 强制隐藏 */
+}
+
 /* 装饰性标题 */
 .reverse-title {
   font-size: 3rem;
@@ -67,6 +82,13 @@ body {
   position: relative;
   text-align: center;
 }
+
+/* 针对 lobby 页面的标题进行微调 */
+.lobby-title {
+  font-size: 1.6rem; 
+  margin: 8px 0 4px; 
+}
+
 .reverse-title::before, .reverse-title::after {
   content: '✦';
   font-size: 1.5rem;
@@ -74,6 +96,7 @@ body {
   opacity: 0.6;
   margin: 0 10px;
 }
+
 .reverse-subtitle {
   font-size: 1rem;
   color: var(--text-secondary);
@@ -84,6 +107,11 @@ body {
   padding-bottom: 5px;
 }
 
+/* 针对 lobby 页面的副标题进行微调 */
+.lobby-subtitle {
+  margin-bottom: 14px; 
+}
+
 /* 通用面板 */
 .glass-panel {
   background: var(--panel-bg);
@@ -91,10 +119,17 @@ body {
   box-shadow: 
     0 0 30px rgba(0,0,0,0.8),
     inset 0 0 20px rgba(203, 161, 104, 0.05);
-  padding: 40px;
-  max-width: 500px;
-  width: 90%;
+  padding: 20px 24px;
+  max-width: 100%;
+  width: 100%; 
   position: relative;
+  box-sizing: border-box; 
+}
+
+/* 针对 lobby 页面的 panel 进行微调 */
+.lobby-panel {
+  margin-top: 8px;       
+  padding: 12px 14px;    
 }
 
 /* 角落装饰 */
@@ -118,8 +153,8 @@ body {
   border-bottom: 1px solid var(--text-secondary);
   color: var(--accent-gold);
   font-family: inherit;
-  font-size: 1.2rem;
-  padding: 10px 0;
+  font-size: 1rem; 
+  padding: 8px 0; 
   margin-bottom: 20px;
   transition: all 0.3s;
 }
@@ -159,58 +194,30 @@ body {
   box-shadow: none;
 }
 
+/* 按钮 - 图标样式 (最小化/关闭) */
+.btn-icon {
+    font-family: inherit;
+    transition: all 0.3s;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+.btn-icon:hover {
+    background: rgba(203, 161, 104, 0.2) !important;
+    box-shadow: 0 0 10px rgba(203, 161, 104, 0.3);
+}
+
 /* 布局网格 (房间页) */
 .room-grid {
-  display: grid;
-  grid-template-columns: 1fr 250px;
-  gap: 20px;
-  width: 95%;
-  max-width: 1400px;
-  margin: 20px;
-  height: 80vh;
-}
-
-/* 播放器区域 */
-.player-frame {
-  border: 2px solid var(--border-color);
-  background: #000;
-  position: relative;
-  display: flex;
+  display: flex; /* 改为 flex 以适应小窗口 */
   flex-direction: column;
-}
-.player-wrapper {
-  flex: 1;
-  background: #000;
-  position: relative;
-}
-
-/* 控制栏 */
-.control-bar {
-  height: 60px;
-  background: #111;
-  border-top: 1px solid var(--accent-gold-dim);
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  gap: 20px;
-}
-
-/* 魔法进度条 */
-.magic-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  height: 2px;
-  background: #333;
-  cursor: pointer;
-}
-.magic-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  background: var(--accent-gold);
-  transform: rotate(45deg);
-  margin-top: -5px;
-  box-shadow: 0 0 5px var(--accent-gold);
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* 强制隐藏 */
 }
 
 /* 侧边栏 (神秘学风格) */
@@ -219,6 +226,7 @@ body {
   background: rgba(0,0,0,0.3);
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* 防止外层出现滚动条 */
 }
 .sidebar-header {
   padding: 15px;
@@ -231,8 +239,15 @@ body {
 .member-list {
   flex: 1;
   padding: 10px;
-  overflow-y: auto;
+  overflow-y: auto; /* 允许内部滚动 */
+  /* 隐藏滚动条样式 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.member-list::-webkit-scrollbar {
+  display: none;
+}
+
 .member-card {
   background: rgba(255,255,255,0.05);
   border: 1px solid #333;
@@ -256,92 +271,6 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-}
-
-/* 响应式优化 */
-
-/* iPad Air 7 等平板设备优化 (宽度 768px - 1024px) */
-@media (min-width: 768px) and (max-width: 1024px) {
-  .room-grid {
-    /* 平板竖屏时，如果宽度较窄，使用堆叠布局；如果宽度足够，保持侧边栏比例 */
-    grid-template-columns: 1fr 220px; /* 稍微缩小侧边栏以给播放器更多空间 */
-    gap: 15px;
-    height: 85vh; /* 增加高度利用率 */
-    width: 98%; /* 增加宽度利用率 */
-  }
-  
-  .player-frame {
-    /* 确保播放器区域有足够高度 */
-    min-height: 50vh;
-  }
-}
-
-/* 手机设备优化 (宽度 < 768px) */
-@media (max-width: 767px) {
-  .reverse-title {
-    font-size: 2rem; /* 减小标题字号 */
-    margin-bottom: 0.5rem;
-  }
-  
-  .glass-panel {
-    padding: 20px; /* 减小内边距 */
-    width: 95%;
-  }
-
-  .room-grid {
-    grid-template-columns: 1fr;
-    height: auto;
-    margin: 10px;
-    width: 95%;
-  }
-
-  .player-frame {
-    /* 手机端保持 16:9 比例容器，防止塌陷 */
-    aspect-ratio: 16/9;
-    min-height: auto; /* 重置可能的高度限制 */
-  }
-  
-  /* 在手机竖屏下，控制栏可能需要换行 */
-  .control-bar {
-    height: auto;
-    flex-wrap: wrap;
-    padding: 10px;
-    gap: 10px;
-  }
-  
-  .sidebar {
-    height: 300px; /* 限制侧边栏高度 */
-    margin-top: 20px;
-  }
-}
-
-/* 荣耀90 SE 等小屏高密度手机优化 (宽度 < 480px) */
-@media (max-width: 480px) {
-  .reverse-title {
-    font-size: 1.8rem;
-    letter-spacing: 0.1em;
-  }
-  
-  .input-field {
-    font-size: 1rem;
-  }
-
-  /* 调整按钮大小以适应手指点击 */
-  .btn-primary {
-    padding: 10px 20px;
-    font-size: 0.9rem;
-    min-width: auto !important; /* 覆盖内联样式 */
-  }
-  
-  .control-bar {
-    justify-content: space-between;
-  }
-  
-  .magic-slider {
-    width: 100%; /* 进度条独占一行 */
-    order: 10; /* 放到最后 */
-    margin-top: 10px;
-  }
 }
 
 /* 卢恩符文：从四处聚集到鼠标附近的粒子效果 */
@@ -376,12 +305,12 @@ body {
   width: 100vw;
   height: 100vh;
   z-index: 9999;
-  pointer-events: none;
-  background: rgba(0, 0, 0, 0.85); /* 移除 backdrop-filter 以提升性能，并加深背景色作为补偿 */
+  /* pointer-events 由 React 控制，CSS这里不设 */
+  background: rgba(0, 0, 0, 0.85); 
   display: flex;
   align-items: center;
   justify-content: center;
-  will-change: opacity; /* 提示浏览器优化 */
+  will-change: opacity; 
   animation: fadeOverlay 2s ease-in-out forwards;
 }
 
@@ -398,7 +327,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  will-change: transform, opacity; /* 性能优化 */
+  will-change: transform, opacity; 
   /* 整体缩小动画：更流畅的贝塞尔曲线 */
   animation: circleShrink 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
@@ -413,7 +342,7 @@ body {
   border-radius: 50%;
   border: 2px dashed var(--accent-gold);
   opacity: 0.8;
-  will-change: transform; /* 性能优化 */
+  will-change: transform; 
   animation: spin 20s linear infinite;
   box-shadow: 0 0 20px rgba(203, 161, 104, 0.3);
 }
@@ -428,9 +357,9 @@ body {
   border-radius: 50%;
   border: 4px solid var(--accent-gold);
   box-shadow: 
-    0 0 30px var(--accent-gold), /* 减小阴影半径以提升性能 */
+    0 0 30px var(--accent-gold), 
     inset 0 0 20px var(--accent-gold);
-  will-change: transform; /* 性能优化 */
+  will-change: transform; 
   animation: spinReverse 15s linear infinite;
   background: radial-gradient(circle, transparent 40%, rgba(203, 161, 104, 0.1) 70%);
 }
@@ -443,7 +372,7 @@ body {
   /* 确保不影响布局 */
   width: 0;
   height: 0;
-  will-change: transform; /* 性能优化 */
+  will-change: transform; 
   /* 整体旋转 */
   animation: spin 30s linear infinite;
 }
@@ -453,12 +382,9 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  /* 移除 transform-origin: 0 0，让其默认围绕自身中心 (50% 50%) 旋转，
-     配合 margin 居中定位，即可确保围绕圆心旋转 */
   color: var(--accent-gold);
-  font-size: 5vmin; /* 响应式字体大小 */
+  font-size: 5vmin; 
   font-weight: bold;
-  /* 减小 text-shadow 半径以提升性能 */
   text-shadow: 0 0 8px var(--accent-gold);
   display: flex;
   align-items: center;
@@ -467,7 +393,6 @@ body {
   height: 6vmin;
   margin-top: -3vmin; 
   margin-left: -3vmin;
-  /* 添加微小的自身闪烁/浮动动画 */
   animation: runePulse 2s ease-in-out infinite alternate;
 }
 
@@ -485,7 +410,7 @@ body {
     opacity: 1;
   }
   100% {
-    transform: scale(0.01); /* 缩小到几乎消失 */
+    transform: scale(0.01); 
     opacity: 0;
   }
 }
