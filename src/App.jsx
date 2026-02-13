@@ -12,7 +12,7 @@ const getAvatar = (name) => {
   return ICONS[Math.abs(hash) % ICONS.length]
 }
 
-const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt'
+const MQTT_BROKER_URL = 'ws://chihuaiyu.asia:1883/mqtt'
 
 export default function App() {
   const [page, setPage] = useState('lobby') 
