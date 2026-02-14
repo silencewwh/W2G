@@ -27,7 +27,7 @@
     "service_worker": "background.js"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://chihuaiyu.asia:9001 wss://chihuaiyu.asia:9001 http://chihuaiyu.asia https://chihuaiyu.asia"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://localhost:9001 wss://localhost:9001 ws://127.0.0.1:9001 wss://127.0.0.1:9001 ws://localhost:9002 ws://127.0.0.1:9002 ws://chihuaiyu.asia:9001 wss://chihuaiyu.asia:9001 http://chihuaiyu.asia https://chihuaiyu.asia ws://broker.emqx.io:8083 wss://broker.emqx.io:8084 http://broker.emqx.io https://broker.emqx.io"
   },
   "content_scripts": [
     {

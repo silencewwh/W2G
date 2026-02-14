@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import ReverseLayout from './ReverseLayout'
 import mqtt from 'mqtt'
 import './styles/reverse1999.css'
@@ -12,19 +12,18 @@ const getAvatar = (name) => {
   return ICONS[Math.abs(hash) % ICONS.length]
 }
 
-const MQTT_HOST = 'chihuaiyu.asia'
-const MQTT_PORT = 9001
-const MQTT_PATH = '/mqtt'
-
-const getMqttBrokerUrl = () => {
-  // HTTPS / chrome-extension 属于安全上下文，浏览器会禁止 ws://，必须使用 wss://
-  const isSecureContextProtocol =
-    window.location.protocol === 'https:' || window.location.protocol === 'chrome-extension:'
-  const scheme = isSecureContextProtocol ? 'wss' : 'ws'
-  return `${scheme}://${MQTT_HOST}:${MQTT_PORT}${MQTT_PATH}`
+const MQTT_BROKER_URL = 'wss://localhost:9001/mqtt'
+const MQTT_CONFIG = {
+  brokerUrl: import.meta.env.VITE_MQTT_BROKER_URL || MQTT_BROKER_URL,
+  localFallbackUrl: import.meta.env.VITE_MQTT_LOCAL_WS_FALLBACK_URL || 'ws://localhost:9002/mqtt',
+  rejectUnauthorized: (import.meta.env.VITE_MQTT_REJECT_UNAUTHORIZED || 'true') === 'true',
+  caPem: import.meta.env.VITE_MQTT_CA_PEM || ''
 }
+const CONTROL_GRACE_MS = Math.max(0, Number(import.meta.env.VITE_W2G_CONTROL_GRACE_MS) || 4500)
+const CONTROL_OWNER_MS = Math.max(CONTROL_GRACE_MS, Number(import.meta.env.VITE_W2G_CONTROL_OWNER_MS) || 9000)
 
 export default function App() {
+  const sessionIdRef = useRef(`w2g_${Math.random().toString(16).slice(2, 10)}`)
   const [page, setPage] = useState('lobby')
   const [roomId, setRoomId] = useState('')
   const [username, setUsername] = useState('')
@@ -44,12 +43,153 @@ export default function App() {
   // 播放器状态 (仅用于同步逻辑，不渲染)
   const [playing, setPlaying] = useState(false)
   const [played, setPlayed] = useState(0)
+  const playingRef = useRef(false)
+  const playedRef = useRef(0)
+  const latestPageStateRef = useRef(null)
+  const localControlUntilRef = useRef(0)
+  const controlOwnerSessionRef = useRef(sessionIdRef.current)
+  const controlOwnerUntilRef = useRef(0)
   // 标记是否正在处理 MQTT 指令，防止回环广播
   const isRemoteRef = useRef(false)
   
   // 成员列表
   const [members, setMembers] = useState(new Map())
   const clientRef = useRef(null)
+
+  useEffect(() => {
+    playingRef.current = playing
+  }, [playing])
+
+  useEffect(() => {
+    playedRef.current = played
+  }, [played])
+
+  // 发送指令给父页面 (Content Script)
+  const sendCommandToParent = useCallback((type, payload = null) => {
+    window.parent.postMessage({ type, payload }, '*')
+  }, [])
+
+  const markLocalAuthority = useCallback(() => {
+    const now = Date.now()
+    localControlUntilRef.current = now + CONTROL_GRACE_MS
+    controlOwnerSessionRef.current = sessionIdRef.current
+    controlOwnerUntilRef.current = now + CONTROL_OWNER_MS
+  }, [])
+
+  const publishMessage = useCallback((msg) => {
+    if (clientRef.current && roomId) {
+      clientRef.current.publish(`watch2gether/${roomId}`, JSON.stringify({
+        ...msg,
+        sessionId: sessionIdRef.current,
+        sender: username,
+        avatar: getAvatar(username),
+        timestamp: Date.now()
+      }))
+    }
+  }, [roomId, username])
+
+  const handleMqttMessage = useCallback((data) => {
+    if (!data || typeof data !== 'object') return
+    const memberKey = data.sessionId || data.sender
+    const isSelfMessage = data.sessionId
+      ? data.sessionId === sessionIdRef.current
+      : data.sender === username
+
+    // 更新成员列表
+    if (['GUEST_JOIN', 'PRESENCE'].includes(data.type) && data.sender && memberKey) {
+      setMembers(prev => {
+        const newMap = new Map(prev)
+        newMap.set(memberKey, {
+          sessionId: data.sessionId,
+          username: data.sender,
+          isHost: data.isHost,
+          avatar: data.avatar
+        })
+        return newMap
+      })
+
+      if (data.type === 'GUEST_JOIN' && !isSelfMessage) {
+        setTimeout(() => publishMessage({ type: 'PRESENCE', isHost }), Math.random() * 500)
+      }
+    }
+
+    if (isSelfMessage) return
+
+    // 标记为远程操作，防止回环
+    isRemoteRef.current = true
+    setTimeout(() => { isRemoteRef.current = false }, 1000)
+
+    // 处理同步指令 -> 控制本地网页播放器
+    if (isOverlay) {
+      if (['PLAY', 'PAUSE', 'SEEK', 'SYNC_STATE', 'PAGE_STATE'].includes(data.type) && Date.now() < localControlUntilRef.current) {
+        return
+      }
+
+      if (['PLAY', 'PAUSE', 'SEEK', 'PAGE_STATE', 'BUFFERING_START', 'BUFFERING_END'].includes(data.type) && data.sessionId) {
+        controlOwnerSessionRef.current = data.sessionId
+        controlOwnerUntilRef.current = Date.now() + CONTROL_OWNER_MS
+      }
+
+      switch (data.type) {
+        case 'PLAY':
+          setPlaying(true)
+          sendCommandToParent('W2G_COMMAND_PLAY')
+          if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: true, isTime: true })
+          break
+        case 'PAUSE':
+          setPlaying(false)
+          sendCommandToParent('W2G_COMMAND_PAUSE')
+          if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: false, isTime: true })
+          break
+        case 'SEEK':
+          sendCommandToParent('W2G_COMMAND_SEEK', data.to)
+          break
+        case 'SYNC_STATE':
+          if (typeof data.playing !== 'undefined') {
+            setPlaying(data.playing)
+            sendCommandToParent(data.playing ? 'W2G_COMMAND_PLAY' : 'W2G_COMMAND_PAUSE')
+          }
+          if (typeof data.played !== 'undefined') {
+            sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: data.playing })
+          }
+          break
+        case 'PAGE_STATE':
+          if (data.state) {
+            latestPageStateRef.current = data.state
+            sendCommandToParent('W2G_COMMAND_PAGE_STATE', data.state)
+          }
+          break
+        case 'BUFFERING_START':
+          setPlaying(false)
+          sendCommandToParent('W2G_COMMAND_PAUSE')
+          break
+        case 'BUFFERING_END':
+          if (typeof data.playing !== 'undefined') {
+            setPlaying(data.playing)
+            sendCommandToParent(data.playing ? 'W2G_COMMAND_PLAY' : 'W2G_COMMAND_PAUSE')
+          }
+          if (typeof data.played !== 'undefined') {
+            sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: data.playing, isTime: true })
+          }
+          break
+      }
+    }
+
+    // 房主同步状态给新人
+    if (data.type === 'GUEST_JOIN' && !isSelfMessage && isOverlay) {
+      publishMessage({
+        type: 'SYNC_STATE',
+        playing: playingRef.current,
+        played: playedRef.current
+      })
+      if (latestPageStateRef.current) {
+        publishMessage({
+          type: 'PAGE_STATE',
+          state: latestPageStateRef.current
+        })
+      }
+    }
+  }, [isOverlay, publishMessage, sendCommandToParent, username])
 
   // 初始化检查
   useEffect(() => {
@@ -75,38 +215,73 @@ export default function App() {
 
       switch (type) {
         case 'W2G_EVENT_PLAY':
+          markLocalAuthority()
           setPlaying(true)
           if (page === 'room') publishMessage({ type: 'PLAY', played: payload.currentTime }) // 注意：这里发的是 currentTime 而不是 percentage
           break
         case 'W2G_EVENT_PAUSE':
+          markLocalAuthority()
           setPlaying(false)
           if (page === 'room') publishMessage({ type: 'PAUSE', played: payload.currentTime })
           break
         case 'W2G_EVENT_SEEKED':
+           markLocalAuthority()
            if (page === 'room') publishMessage({ type: 'SEEK', to: payload.currentTime })
           break
         case 'W2G_EVENT_PROGRESS':
           setPlayed(payload.played)
+          break
+        case 'W2G_EVENT_PAGE_STATE':
+          markLocalAuthority()
+          latestPageStateRef.current = payload
+          if (page === 'room') publishMessage({ type: 'PAGE_STATE', state: payload })
+          break
+        case 'W2G_EVENT_BUFFERING_START':
+          markLocalAuthority()
+          if (page === 'room') publishMessage({ type: 'BUFFERING_START', played: payload?.currentTime })
+          break
+        case 'W2G_EVENT_BUFFERING_END':
+          markLocalAuthority()
+          if (page === 'room') publishMessage({
+            type: 'BUFFERING_END',
+            played: payload?.currentTime,
+            playing: payload?.playing
+          })
+          break
+        case 'W2G_COPY_RESULT':
+          setCopyTip(payload?.ok ? '已复制' : '复制失败')
+          setTimeout(() => setCopyTip(''), 1200)
           break
       }
     }
 
     window.addEventListener('message', handleParentMessage)
     return () => window.removeEventListener('message', handleParentMessage)
-  }, [isOverlay, page, roomId]) // 依赖项
+  }, [isOverlay, markLocalAuthority, page, publishMessage, roomId]) // 依赖项
 
   // MQTT 连接
   useEffect(() => {
     if (page === 'room' && roomId && username) {
       // 初始化成员列表
-      setMembers(prev => new Map(prev).set(username, { username, isHost, avatar: getAvatar(username) }))
+      setMembers(prev => new Map(prev).set(sessionIdRef.current, {
+        sessionId: sessionIdRef.current,
+        username,
+        isHost,
+        avatar: getAvatar(username)
+      }))
 
       setConnectionStatus('connecting')
       setErrorMessage('')
 
       let client = null
-      try {
-        client = mqtt.connect(getMqttBrokerUrl(), {
+      let connectedOnce = false
+      let fallbackTried = false
+
+      const shouldTryLocalFallback =
+        /^wss:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(MQTT_CONFIG.brokerUrl)
+
+      const createClient = (brokerUrl) => {
+        const connectionOptions = {
           clientId: `w2g_${Math.random().toString(16).slice(2, 8)}`,
           keepalive: 60,
           protocolId: 'MQTT',
@@ -114,17 +289,25 @@ export default function App() {
           clean: true,
           reconnectPeriod: 3000,
           connectTimeout: 10 * 1000,
-        })
+          rejectUnauthorized: MQTT_CONFIG.rejectUnauthorized
+        }
+        if (MQTT_CONFIG.caPem) connectionOptions.ca = MQTT_CONFIG.caPem
+        return mqtt.connect(brokerUrl, connectionOptions)
+      }
+
+      try {
+        client = createClient(MQTT_CONFIG.brokerUrl)
       } catch (err) {
         console.error('[W2G] MQTT init failed:', err)
         setConnectionStatus('error')
-        setErrorMessage(`MQTT 初始化失败: ${err?.message || '未知错误'} (地址: ${getMqttBrokerUrl()})`)
+        setErrorMessage(`MQTT 初始化失败: ${err?.message || '未知错误'} (地址: ${MQTT_CONFIG.brokerUrl})`)
         return
       }
 
       clientRef.current = client
 
       client.on('connect', () => {
+        connectedOnce = true
         console.log('[W2G] MQTT Connected')
         setConnectionStatus('connected')
         setErrorMessage('')
@@ -146,13 +329,59 @@ export default function App() {
 
       client.on('offline', () => {
         console.log('[W2G] MQTT Offline')
-        if (connectionStatus !== 'error') {
-            setConnectionStatus('connecting')
-        }
+        setConnectionStatus(prev => (prev === 'error' ? prev : 'connecting'))
       })
 
       client.on('close', () => {
         console.log('[W2G] MQTT Closed')
+        if (!connectedOnce && shouldTryLocalFallback && !fallbackTried) {
+          fallbackTried = true
+          console.warn(`[W2G] WSS connect failed, fallback to ${MQTT_CONFIG.localFallbackUrl}`)
+          setConnectionStatus('connecting')
+          client.removeAllListeners()
+          clientRef.current = createClient(MQTT_CONFIG.localFallbackUrl)
+          client = clientRef.current
+
+          client.on('connect', () => {
+            connectedOnce = true
+            console.log('[W2G] MQTT Connected (fallback)')
+            setConnectionStatus('connected')
+            setErrorMessage('')
+            client.subscribe(`watch2gether/${roomId}`, (err) => {
+              if (!err) {
+                publishMessage({ type: 'GUEST_JOIN', isHost })
+              } else {
+                console.error('[W2G] Subscribe error:', err)
+                setErrorMessage('订阅房间失败')
+              }
+            })
+          })
+
+          client.on('error', (err) => {
+            console.error('[W2G] MQTT Error (fallback):', err)
+            setConnectionStatus('error')
+            setErrorMessage(`连接错误: ${err.message}`)
+          })
+
+          client.on('offline', () => {
+            console.log('[W2G] MQTT Offline (fallback)')
+            setConnectionStatus(prev => (prev === 'error' ? prev : 'connecting'))
+          })
+
+          client.on('close', () => {
+            console.log('[W2G] MQTT Closed (fallback)')
+            setConnectionStatus('disconnected')
+          })
+
+          client.on('message', (topic, message) => {
+            try {
+              handleMqttMessage(JSON.parse(message.toString()))
+            } catch (err) {
+              console.error('[W2G] MQTT message parse failed:', err)
+            }
+          })
+          return
+        }
         setConnectionStatus('disconnected')
       })
 
@@ -171,18 +400,26 @@ export default function App() {
         setConnectionStatus('disconnected')
       }
     }
-  }, [page, roomId, username, isHost])
+  }, [handleMqttMessage, isHost, page, publishMessage, roomId, username])
 
-  const publishMessage = (msg) => {
-    if (clientRef.current && roomId) {
-      clientRef.current.publish(`watch2gether/${roomId}`, JSON.stringify({
-        ...msg,
-        sender: username, 
-        avatar: getAvatar(username),
-        timestamp: Date.now()
-      }))
-    }
-  }
+  useEffect(() => {
+    if (!(page === 'room' && isOverlay && connectionStatus === 'connected')) return
+
+    const timer = setInterval(() => {
+      if (isRemoteRef.current) return
+      const now = Date.now()
+      const isCurrentOwner = controlOwnerSessionRef.current === sessionIdRef.current
+      const ownerValid = now < controlOwnerUntilRef.current
+      if (!(isCurrentOwner && ownerValid)) return
+      publishMessage({
+        type: 'SYNC_STATE',
+        playing: playingRef.current,
+        played: playedRef.current
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [connectionStatus, isOverlay, page, publishMessage])
 
   const handleCopyRoomId = async () => {
     if (!roomId) return
@@ -191,81 +428,15 @@ export default function App() {
       setCopyTip('已复制')
     } catch (err) {
       console.error('[W2G] 复制房间号失败:', err)
-      setCopyTip('复制失败')
+      sendCommandToParent('W2G_COPY_TEXT', roomId)
+      setCopyTip('复制中...')
     } finally {
-      setTimeout(() => setCopyTip(''), 1200)
+      setTimeout(() => {
+        setCopyTip(prev => (prev === '复制中...' ? '' : prev))
+      }, 1500)
     }
   }
 
-  const handleMqttMessage = (data) => {
-    // 更新成员列表
-    if (['GUEST_JOIN', 'PRESENCE'].includes(data.type) && data.sender) {
-      setMembers(prev => {
-        const newMap = new Map(prev)
-        newMap.set(data.sender, { username: data.sender, isHost: data.isHost, avatar: data.avatar })
-        return newMap
-      })
-
-      if (data.type === 'GUEST_JOIN' && data.sender !== username) {
-        setTimeout(() => publishMessage({ type: 'PRESENCE', isHost }), Math.random() * 500)
-      }
-    }
-
-    if (data.sender === username) return 
-
-    // 标记为远程操作，防止回环
-    isRemoteRef.current = true;
-    setTimeout(() => { isRemoteRef.current = false }, 1000); // 1秒冷却
-
-    // 处理同步指令 -> 控制本地网页播放器
-    if (isOverlay) {
-        switch (data.type) {
-        case 'PLAY':
-            setPlaying(true)
-            sendCommandToParent('W2G_COMMAND_PLAY')
-            // 如果有进度信息，顺便同步一下
-            if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: true, isTime: true }) 
-            break
-        case 'PAUSE':
-            setPlaying(false)
-            sendCommandToParent('W2G_COMMAND_PAUSE')
-            if (typeof data.played !== 'undefined') sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: false, isTime: true })
-            break
-        case 'SEEK':
-            sendCommandToParent('W2G_COMMAND_SEEK', data.to) // data.to 是 currentTime
-            break
-        case 'SYNC_STATE': 
-            // 收到权威状态同步
-            if (!isHost) {
-                if (typeof data.playing !== 'undefined') {
-                    setPlaying(data.playing)
-                    sendCommandToParent(data.playing ? 'W2G_COMMAND_PLAY' : 'W2G_COMMAND_PAUSE')
-                }
-                if (typeof data.played !== 'undefined') {
-                    // data.played 在这里应该是 currentTime 或 percentage，需要统一
-                    // 假设是 percentage
-                    sendCommandToParent('W2G_COMMAND_SYNC', { played: data.played, playing: data.playing })
-                }
-            }
-            break
-        }
-    }
-
-    // 房主同步状态给新人 (无需修改，只需要发送当前状态)
-    if (data.type === 'GUEST_JOIN' && isHost && data.sender !== username) {
-        // 请求父页面返回当前状态用于同步 (这里简化，假设 playing 和 played 状态是最新的)
-        publishMessage({
-            type: 'SYNC_STATE',
-            playing: playing,
-            played: played // 这个是 percentage
-        })
-    }
-  }
-
-  // 发送指令给父页面 (Content Script)
-  const sendCommandToParent = (type, payload = null) => {
-    window.parent.postMessage({ type, payload }, '*')
-  }
 
   const handleMinimize = () => {
     sendCommandToParent('W2G_COMMAND_MINIMIZE')
@@ -295,7 +466,9 @@ export default function App() {
   }
 
   const handleJoinRoom = () => {
-    if (!username.trim() || !roomId.trim()) return
+    const normalizedRoomId = roomId.trim().toUpperCase()
+    if (!username.trim() || !normalizedRoomId) return
+    setRoomId(normalizedRoomId)
     setIsHost(false)
     switchPage('room')
   }

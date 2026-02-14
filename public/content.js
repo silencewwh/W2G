@@ -3,9 +3,16 @@
 
 const UI_ID = 'w2g-overlay-container';
 const IFRAME_ID = 'w2g-app-frame';
+const SOFT_SYNC_MAX_DRIFT_SECONDS = 3;
+const SOFT_SYNC_STABLE_EPSILON_SECONDS = 0.35;
+const SOFT_SYNC_FAST_RATE = 1.05;
+const SOFT_SYNC_SLOW_RATE = 0.95;
+const PAGE_STATE_POLL_INTERVAL_MS = 1000;
+let pageStateSyncTimer = null;
+let lastPageStateFingerprint = '';
+let isBufferingNotified = false;
 let isUIVisible = false;
 let isMinimized = false; // 最小化状态
-let dragStartTime = 0;
 let dragStartX = 0;
 let dragStartY = 0;
 let isDragging = false; // 明确区分是否发生了拖动
@@ -160,7 +167,6 @@ function createUI() {
     // 注意：非最小化状态下的点击由 iframe 处理或通过 App 内部按钮触发
     container.addEventListener('mousedown', (e) => {
         if (!isMinimized) return; // 只有最小化时才需要监听点击恢复
-        dragStartTime = Date.now();
         dragStartX = e.clientX;
         dragStartY = e.clientY;
         isDragging = false;
@@ -208,6 +214,7 @@ function createUI() {
     
     // 监听当前页面的视频事件并转发给 Iframe
     setupVideoListener();
+    setupPageStateSync();
 }
 
 function addRuneBorder(container) {
@@ -293,6 +300,158 @@ function makeDraggable(element) {
     }
 }
 
+async function copyTextFromTopPage(text) {
+    if (!text) return false;
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (_) {
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    Object.assign(textarea.style, {
+        position: 'fixed',
+        opacity: '0',
+        left: '-9999px',
+        top: '-9999px'
+    });
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    let ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch (_) {
+        ok = false;
+    }
+    document.body.removeChild(textarea);
+    return ok;
+}
+
+function postToIframe(type, payload) {
+    const iframe = document.getElementById(IFRAME_ID);
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type, payload }, '*');
+    }
+}
+
+function normalizeText(value) {
+    return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function getCurrentQualityLabel() {
+    const qualitySelectors = [
+        '[aria-label*="清晰" i]',
+        '[aria-label*="quality" i]',
+        '[class*="quality" i]',
+        '[data-quality]',
+        '.quality-item',
+        '[role="menuitem"]'
+    ];
+
+    for (const selector of qualitySelectors) {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        const activeNode = nodes.find((node) => {
+            const text = normalizeText(node.textContent || node.getAttribute('aria-label') || '');
+            if (!text) return false;
+            if (node.getAttribute('aria-checked') === 'true') return true;
+            if (node.classList?.contains('active')) return true;
+            if (node.classList?.contains('selected')) return true;
+            return false;
+        });
+        if (activeNode) {
+            return (activeNode.textContent || activeNode.getAttribute('aria-label') || '').trim();
+        }
+    }
+
+    return '';
+}
+
+function getPageStateSnapshot() {
+    const video = findMainVideo();
+    return {
+        url: location.href,
+        title: document.title,
+        playbackRate: video ? video.playbackRate : 1,
+        qualityLabel: getCurrentQualityLabel()
+    };
+}
+
+function emitPageStateIfChanged(force = false) {
+    const state = getPageStateSnapshot();
+    const fingerprint = JSON.stringify(state);
+    if (!force && fingerprint === lastPageStateFingerprint) return;
+    lastPageStateFingerprint = fingerprint;
+    postToIframe('W2G_EVENT_PAGE_STATE', state);
+}
+
+function tryApplyQualityLabel(label) {
+    const target = normalizeText(label);
+    if (!target) return false;
+
+    const candidates = Array.from(document.querySelectorAll('button, [role="menuitem"], li, option, [data-quality], .quality-item'));
+    for (const node of candidates) {
+        const text = normalizeText(node.textContent || node.getAttribute('aria-label') || node.getAttribute('data-quality') || '');
+        if (!text) continue;
+        if (!(text === target || text.includes(target) || target.includes(text))) continue;
+
+        if (node.tagName === 'OPTION' && node.parentElement && node.parentElement.tagName === 'SELECT') {
+            node.selected = true;
+            node.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
+
+        if (typeof node.click === 'function') {
+            node.click();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function applyRemotePageState(state) {
+    if (!state || typeof state !== 'object') return;
+
+    if (state.url && typeof state.url === 'string' && state.url !== location.href) {
+        location.href = state.url;
+        return;
+    }
+
+    const video = findMainVideo();
+    if (video && typeof state.playbackRate === 'number' && Number.isFinite(state.playbackRate)) {
+        const clampedRate = Math.min(4, Math.max(0.25, state.playbackRate));
+        if (Math.abs(video.playbackRate - clampedRate) > 0.01) {
+            video.playbackRate = clampedRate;
+        }
+    }
+
+    if (state.qualityLabel) {
+        tryApplyQualityLabel(state.qualityLabel);
+    }
+}
+
+function setupPageStateSync() {
+    if (pageStateSyncTimer) clearInterval(pageStateSyncTimer);
+
+    const emitNow = () => emitPageStateIfChanged();
+    pageStateSyncTimer = setInterval(emitNow, PAGE_STATE_POLL_INTERVAL_MS);
+    window.addEventListener('popstate', emitNow);
+    window.addEventListener('hashchange', emitNow);
+
+    const video = findMainVideo();
+    if (video) {
+        video.addEventListener('ratechange', emitNow);
+    }
+
+    emitPageStateIfChanged(true);
+}
+
 
 // 处理来自 Iframe (React App) 的消息
 function handleIframeMessage(event) {
@@ -302,9 +461,19 @@ function handleIframeMessage(event) {
     const { type, payload } = event.data;
     const video = findMainVideo();
 
+    const safePlay = (targetVideo) => {
+        if (!targetVideo) return;
+        const playPromise = targetVideo.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch((err) => {
+                console.warn('[W2G] play() blocked by browser autoplay policy:', err?.message || err);
+            });
+        }
+    };
+
     switch (type) {
         case 'W2G_COMMAND_PLAY':
-            if(video) video.play();
+            safePlay(video);
             break;
         case 'W2G_COMMAND_PAUSE':
             if(video) video.pause();
@@ -314,6 +483,7 @@ function handleIframeMessage(event) {
                 // 兼容两种格式：0~1 的进度百分比，或绝对秒数
                 const nextTime = payload <= 1 ? payload * video.duration : payload;
                 video.currentTime = nextTime;
+                if (video.playbackRate !== 1) video.playbackRate = 1;
             }
             break;
         case 'W2G_COMMAND_SYNC':
@@ -321,10 +491,28 @@ function handleIframeMessage(event) {
                 const targetTime = payload.isTime
                     ? payload.played
                     : payload.played * video.duration;
-                if (typeof targetTime === 'number' && Math.abs(video.currentTime - targetTime) > 2) {
-                    video.currentTime = targetTime;
+                if (typeof targetTime === 'number') {
+                    const driftSeconds = targetTime - video.currentTime;
+                    const absDrift = Math.abs(driftSeconds);
+
+                    if (payload.playing) {
+                        if (absDrift > SOFT_SYNC_MAX_DRIFT_SECONDS) {
+                            video.currentTime = targetTime;
+                            if (video.playbackRate !== 1) video.playbackRate = 1;
+                        } else if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
+                            const nextRate = driftSeconds > 0 ? SOFT_SYNC_FAST_RATE : SOFT_SYNC_SLOW_RATE;
+                            if (video.playbackRate !== nextRate) video.playbackRate = nextRate;
+                        } else if (video.playbackRate !== 1) {
+                            video.playbackRate = 1;
+                        }
+                    } else {
+                        if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
+                            video.currentTime = targetTime;
+                        }
+                        if (video.playbackRate !== 1) video.playbackRate = 1;
+                    }
                 }
-                if (payload.playing && video.paused) video.play();
+                if (payload.playing && video.paused) safePlay(video);
                 if (!payload.playing && !video.paused) video.pause();
             }
             break;
@@ -333,6 +521,15 @@ function handleIframeMessage(event) {
             break;
         case 'W2G_COMMAND_CLOSE':
             toggleUI(); // 关闭逻辑与 toggle 相同
+            break;
+        case 'W2G_COPY_TEXT':
+            copyTextFromTopPage(typeof payload === 'string' ? payload : '')
+                .then((ok) => {
+                    postToIframe('W2G_COPY_RESULT', { ok });
+                });
+            break;
+        case 'W2G_COMMAND_PAGE_STATE':
+            applyRemotePageState(payload);
             break;
     }
 }
@@ -348,20 +545,40 @@ function setupVideoListener() {
     console.log('[W2G] Video found, attaching listeners');
     
     const notifyIframe = (type, data) => {
-        const iframe = document.getElementById(IFRAME_ID);
         // 即使最小化也持续发送事件，保证 MQTT 同步不中断
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({ type, payload: data }, '*');
-        }
+        postToIframe(type, data);
+    };
+
+    const notifyBufferingStart = () => {
+        if (isBufferingNotified) return;
+        if (video.paused) return;
+        isBufferingNotified = true;
+        notifyIframe('W2G_EVENT_BUFFERING_START', { currentTime: video.currentTime });
+    };
+
+    const notifyBufferingEnd = () => {
+        if (!isBufferingNotified) return;
+        isBufferingNotified = false;
+        notifyIframe('W2G_EVENT_BUFFERING_END', {
+            currentTime: video.currentTime,
+            playing: !video.paused
+        });
     };
 
     video.addEventListener('play', () => notifyIframe('W2G_EVENT_PLAY', { currentTime: video.currentTime }));
-    video.addEventListener('pause', () => notifyIframe('W2G_EVENT_PAUSE', { currentTime: video.currentTime }));
+    video.addEventListener('pause', () => {
+        isBufferingNotified = false;
+        notifyIframe('W2G_EVENT_PAUSE', { currentTime: video.currentTime });
+    });
     video.addEventListener('timeupdate', () => {
         const progress = video.duration ? (video.currentTime / video.duration) : 0;
         notifyIframe('W2G_EVENT_PROGRESS', { played: progress, currentTime: video.currentTime });
     });
     video.addEventListener('seeked', () => notifyIframe('W2G_EVENT_SEEKED', { currentTime: video.currentTime }));
+    video.addEventListener('waiting', notifyBufferingStart);
+    video.addEventListener('stalled', notifyBufferingStart);
+    video.addEventListener('playing', notifyBufferingEnd);
+    video.addEventListener('canplay', notifyBufferingEnd);
 }
 
 // 辅助：查找主要视频元素

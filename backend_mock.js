@@ -38,7 +38,7 @@ class RoomManager {
         console.log(`[Backend] Broadcasting to room ${roomName}:`, state);
     }
 
-    isHost(roomName, user) {
+    isHost() {
         // 模拟判断房主逻辑
         return true; 
     }

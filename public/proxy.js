@@ -176,7 +176,7 @@ class VideoSynchronizer {
         this.sendToBackend(payload);
     }
 
-    sendToBackend(payload) {
+    sendToBackend() {
         // Mock backend communication
         // console.log('[W2G] Reporting status:', payload);
         

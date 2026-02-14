@@ -31,6 +31,39 @@
 
 默认连接公共 MQTT Broker。如需生产环境使用，请在 `src/App.jsx` 中修改 `MQTT_BROKER_URL` 为自建的 MQTT 服务地址（推荐使用 EMQX 或 Mosquitto）。
 
+## 本地 MQTT + WSS 验证（用于插件联调）
+
+1. 安装 Python 依赖
+   ```bash
+   pip install websockets
+   ```
+
+2. 生成本地证书（PowerShell / Git Bash 任选）
+   ```bash
+   mkdir -p certs
+   openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 365 \
+     -keyout certs/localhost.key -out certs/localhost.crt \
+     -subj "/CN=localhost"
+   ```
+
+3. 启动本地 WSS Broker
+   ```bash
+   python tools/local_mqtt_wss_broker.py --host 0.0.0.0 --port 9001 --path /mqtt
+   ```
+
+4. 前端切换到本地 Broker（在项目根目录创建 `.env.local`）
+   ```bash
+   VITE_MQTT_BROKER_URL=wss://localhost:9001/mqtt
+   VITE_MQTT_REJECT_UNAUTHORIZED=false
+   ```
+
+5. 重新构建并重载扩展后，用两个页面加入同一房间，观察 broker 控制台输出：
+   - `CONNECT`：客户端连接
+   - `SUBSCRIBE`：订阅房间 topic
+   - `PUBLISH`：收到同步消息并转发
+
+> 注意：浏览器对自签名证书可能仍会拦截 `wss://localhost`。若连不上，请先在浏览器访问一次 `https://localhost:9001` 并信任证书，或使用受信任证书（如 mkcert）。
+
 ## 字体
 
 本项目使用系统宋体/明体 (Songti/SimSun) 以还原复古文学气息，无需加载外部字体文件。
