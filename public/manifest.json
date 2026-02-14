@@ -26,6 +26,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://chihuaiyu.asia:9001 wss://chihuaiyu.asia:9001 http://chihuaiyu.asia https://chihuaiyu.asia"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

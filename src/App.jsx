@@ -12,10 +12,20 @@ const getAvatar = (name) => {
   return ICONS[Math.abs(hash) % ICONS.length]
 }
 
-const MQTT_BROKER_URL = 'ws://chihuaiyu.asia:1883/mqtt'
+const MQTT_HOST = 'chihuaiyu.asia'
+const MQTT_PORT = 9001
+const MQTT_PATH = '/mqtt'
+
+const getMqttBrokerUrl = () => {
+  // HTTPS / chrome-extension 属于安全上下文，浏览器会禁止 ws://，必须使用 wss://
+  const isSecureContextProtocol =
+    window.location.protocol === 'https:' || window.location.protocol === 'chrome-extension:'
+  const scheme = isSecureContextProtocol ? 'wss' : 'ws'
+  return `${scheme}://${MQTT_HOST}:${MQTT_PORT}${MQTT_PATH}`
+}
 
 export default function App() {
-  const [page, setPage] = useState('lobby') 
+  const [page, setPage] = useState('lobby')
   const [roomId, setRoomId] = useState('')
   const [username, setUsername] = useState('')
   const [isHost, setIsHost] = useState(false)
@@ -27,15 +37,19 @@ export default function App() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [copyTip, setCopyTip] = useState('')
 
+  // MQTT 连接状态
+  const [connectionStatus, setConnectionStatus] = useState('disconnected') // disconnected, connecting, connected, error
+  const [errorMessage, setErrorMessage] = useState('')
+
   // 播放器状态 (仅用于同步逻辑，不渲染)
   const [playing, setPlaying] = useState(false)
-  const [played, setPlayed] = useState(0) 
+  const [played, setPlayed] = useState(0)
   // 标记是否正在处理 MQTT 指令，防止回环广播
   const isRemoteRef = useRef(false)
   
   // 成员列表
   const [members, setMembers] = useState(new Map())
-  const clientRef = useRef(null) 
+  const clientRef = useRef(null)
 
   // 初始化检查
   useEffect(() => {
@@ -52,6 +66,7 @@ export default function App() {
     if (!isOverlay) return
 
     const handleParentMessage = (event) => {
+      if (!event.data || typeof event.data !== 'object') return
       const { type, payload } = event.data
       if (!type) return
 
@@ -86,24 +101,59 @@ export default function App() {
       // 初始化成员列表
       setMembers(prev => new Map(prev).set(username, { username, isHost, avatar: getAvatar(username) }))
 
-      const client = mqtt.connect(MQTT_BROKER_URL, {
-        clientId: `w2g_${Math.random().toString(16).slice(2, 8)}`,
-        keepalive: 60,
-        protocolId: 'MQTT',
-        protocolVersion: 4,
-        clean: true,
-        reconnectPeriod: 1000,
-        connectTimeout: 30 * 1000,
-      })
+      setConnectionStatus('connecting')
+      setErrorMessage('')
+
+      let client = null
+      try {
+        client = mqtt.connect(getMqttBrokerUrl(), {
+          clientId: `w2g_${Math.random().toString(16).slice(2, 8)}`,
+          keepalive: 60,
+          protocolId: 'MQTT',
+          protocolVersion: 4,
+          clean: true,
+          reconnectPeriod: 3000,
+          connectTimeout: 10 * 1000,
+        })
+      } catch (err) {
+        console.error('[W2G] MQTT init failed:', err)
+        setConnectionStatus('error')
+        setErrorMessage(`MQTT 初始化失败: ${err?.message || '未知错误'} (地址: ${getMqttBrokerUrl()})`)
+        return
+      }
 
       clientRef.current = client
 
       client.on('connect', () => {
+        console.log('[W2G] MQTT Connected')
+        setConnectionStatus('connected')
+        setErrorMessage('')
         client.subscribe(`watch2gether/${roomId}`, (err) => {
           if (!err) {
             publishMessage({ type: 'GUEST_JOIN', isHost })
+          } else {
+            console.error('[W2G] Subscribe error:', err)
+            setErrorMessage('订阅房间失败')
           }
         })
+      })
+
+      client.on('error', (err) => {
+        console.error('[W2G] MQTT Error:', err)
+        setConnectionStatus('error')
+        setErrorMessage(`连接错误: ${err.message}`)
+      })
+
+      client.on('offline', () => {
+        console.log('[W2G] MQTT Offline')
+        if (connectionStatus !== 'error') {
+            setConnectionStatus('connecting')
+        }
+      })
+
+      client.on('close', () => {
+        console.log('[W2G] MQTT Closed')
+        setConnectionStatus('disconnected')
       })
 
       client.on('message', (topic, message) => {
@@ -115,8 +165,10 @@ export default function App() {
       })
 
       return () => {
+        console.log('[W2G] Disconnecting MQTT')
         client.end()
         clientRef.current = null
+        setConnectionStatus('disconnected')
       }
     }
   }, [page, roomId, username, isHost])
@@ -327,6 +379,21 @@ export default function App() {
                 </button>
             </div>
 
+            {connectionStatus !== 'connected' && (
+                <div style={{
+                    marginBottom: '10px',
+                    padding: '5px',
+                    background: 'rgba(255, 50, 50, 0.1)',
+                    border: '1px solid rgba(255, 50, 50, 0.3)',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    color: '#ff6666',
+                    textAlign: 'center'
+                }}>
+                    {connectionStatus === 'connecting' ? '正在建立连接...' : `连接失败: ${errorMessage || '未知错误'}`}
+                </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
                 <span style={{ color: '#cba168', fontWeight: 'bold' }}>幅频 (Frequency)</span>
                 <span
@@ -341,6 +408,21 @@ export default function App() {
                 <span style={{ color: '#888' }}>秘名 (User)</span>
                 <span>{username} </span>
             </div>
+            
+            {/* 连接状态提示 */}
+            {connectionStatus !== 'connected' && (
+                <div style={{
+                    marginTop: '10px',
+                    padding: '5px',
+                    borderRadius: '4px',
+                    fontSize: '0.8rem',
+                    textAlign: 'center',
+                    background: connectionStatus === 'error' ? 'rgba(255, 50, 50, 0.2)' : 'rgba(203, 161, 104, 0.2)',
+                    color: connectionStatus === 'error' ? '#ff4444' : '#cba168'
+                }}>
+                    {connectionStatus === 'connecting' ? '正在建立连接...' : errorMessage || '连接断开'}
+                </div>
+            )}
         </div>
 
         {/* 2. 成员列表 */}
