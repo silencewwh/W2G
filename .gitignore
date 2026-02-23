@@ -10,7 +10,11 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist.*
 *.local
+*.zip
+*.crx
+*.pem
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +26,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Certificates / private keys
+CA/*.key
+CA/*.pfx
+CA/*.p12
+CA/*.jks

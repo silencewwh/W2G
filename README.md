@@ -29,7 +29,7 @@
 
 ## 配置说明
 
-默认连接公共 MQTT Broker。如需生产环境使用，请在 `src/App.jsx` 中修改 `MQTT_BROKER_URL` 为自建的 MQTT 服务地址（推荐使用 EMQX 或 Mosquitto）。
+默认连接自建 MQTT Broker（Mosquitto WSS）。如需切换，请通过环境变量覆盖（推荐用于多环境部署）。
 
 ## 本地 MQTT + WSS 验证（用于插件联调）
 
@@ -53,9 +53,19 @@
 
 4. 前端切换到本地 Broker（在项目根目录创建 `.env.local`）
    ```bash
+   # 本地 Python demo broker 使用 /mqtt 路径
    VITE_MQTT_BROKER_URL=wss://localhost:9001/mqtt
    VITE_MQTT_REJECT_UNAUTHORIZED=false
    ```
+
+## 连接到 ImmortalWrt（Mosquitto WSS）
+
+在项目根目录创建 `.env.local`：
+
+```bash
+# Mosquitto 通常使用 / 路径（不需要 /mqtt）
+VITE_MQTT_BROKER_URL=wss://chihuaiyu.asia:9001
+```
 
 5. 重新构建并重载扩展后，用两个页面加入同一房间，观察 broker 控制台输出：
    - `CONNECT`：客户端连接

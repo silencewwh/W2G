@@ -12,7 +12,9 @@ const getAvatar = (name) => {
   return ICONS[Math.abs(hash) % ICONS.length]
 }
 
-const MQTT_BROKER_URL = 'wss://localhost:9001/mqtt'
+// 生产默认使用自建 Mosquitto 的 WSS 入口（ImmortalWrt: listener 9001 + protocol websockets）
+// 注意：Mosquitto 常见路径是 `/`，不像部分 broker（如 EMQX）会使用 `/mqtt`。
+const MQTT_BROKER_URL = 'wss://chihuaiyu.asia:9001'
 const MQTT_CONFIG = {
   brokerUrl: import.meta.env.VITE_MQTT_BROKER_URL || MQTT_BROKER_URL,
   localFallbackUrl: import.meta.env.VITE_MQTT_LOCAL_WS_FALLBACK_URL || 'ws://localhost:9002/mqtt',
@@ -278,7 +280,7 @@ export default function App() {
       let fallbackTried = false
 
       const shouldTryLocalFallback =
-        /^wss:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(MQTT_CONFIG.brokerUrl)
+        /^wss:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(MQTT_CONFIG.brokerUrl)
 
       const createClient = (brokerUrl) => {
         const connectionOptions = {

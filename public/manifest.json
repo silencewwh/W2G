@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "W2G Extension",
+  "name": "魔法连携",
   "version": "1.0",
   "description": "Watch Together Extension with iframe breaking capability",
   "permissions": [
+    "activeTab",
+    "tabs",
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess"
   ],
@@ -21,7 +23,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "W2G"
+    "default_title": "魔法连携"
   },
   "background": {
     "service_worker": "background.js"
