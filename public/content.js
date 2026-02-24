@@ -26,11 +26,101 @@ function init() {
         if (request.action === 'TOGGLE_UI') {
             toggleUI();
             sendResponse({ status: 'ok', visible: isUIVisible });
+            return;
+        }
+
+        if (request.action === 'W2G_PANEL_COMMAND' && request.type) {
+            handleW2GCommand(request.type, request.payload);
+            sendResponse?.({ status: 'ok' });
         }
     });
 
     // 注入全局样式
     injectStyles();
+}
+
+function emitToSidePanel(type, payload) {
+    try {
+        chrome.runtime?.sendMessage?.({ action: 'W2G_PANEL_EVENT', type, payload });
+    } catch (err) {
+        void err;
+    }
+}
+
+function handleW2GCommand(type, payload) {
+    const video = findMainVideo();
+
+    const safePlay = (targetVideo) => {
+        if (!targetVideo) return;
+        const playPromise = targetVideo.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch((err) => {
+                console.warn('[W2G] play() blocked by browser autoplay policy:', err?.message || err);
+            });
+        }
+    };
+
+    switch (type) {
+        case 'W2G_COMMAND_PLAY':
+            safePlay(video);
+            break;
+        case 'W2G_COMMAND_PAUSE':
+            if (video) video.pause();
+            break;
+        case 'W2G_COMMAND_SEEK':
+            if (video && typeof payload === 'number') {
+                const nextTime = payload <= 1 ? payload * video.duration : payload;
+                video.currentTime = nextTime;
+                if (video.playbackRate !== 1) video.playbackRate = 1;
+            }
+            break;
+        case 'W2G_COMMAND_SYNC':
+            if (video && payload) {
+                const targetTime = payload.isTime
+                    ? payload.played
+                    : payload.played * video.duration;
+                if (typeof targetTime === 'number') {
+                    const driftSeconds = targetTime - video.currentTime;
+                    const absDrift = Math.abs(driftSeconds);
+
+                    if (payload.playing) {
+                        if (absDrift > SOFT_SYNC_MAX_DRIFT_SECONDS) {
+                            video.currentTime = targetTime;
+                            if (video.playbackRate !== 1) video.playbackRate = 1;
+                        } else if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
+                            const nextRate = driftSeconds > 0 ? SOFT_SYNC_FAST_RATE : SOFT_SYNC_SLOW_RATE;
+                            if (video.playbackRate !== nextRate) video.playbackRate = nextRate;
+                        } else if (video.playbackRate !== 1) {
+                            video.playbackRate = 1;
+                        }
+                    } else {
+                        if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
+                            video.currentTime = targetTime;
+                        }
+                        if (video.playbackRate !== 1) video.playbackRate = 1;
+                    }
+                }
+                if (payload.playing && video.paused) safePlay(video);
+                if (!payload.playing && !video.paused) video.pause();
+            }
+            break;
+        case 'W2G_COMMAND_PAGE_STATE':
+            applyRemotePageState(payload);
+            break;
+        case 'W2G_COMMAND_MINIMIZE':
+            toggleMinimize();
+            break;
+        case 'W2G_COMMAND_CLOSE':
+            toggleUI();
+            break;
+        case 'W2G_COPY_TEXT':
+            copyTextFromTopPage(typeof payload === 'string' ? payload : '')
+                .then((ok) => {
+                    postToIframe('W2G_COPY_RESULT', { ok });
+                    emitToSidePanel('W2G_COPY_RESULT', { ok });
+                });
+            break;
+    }
 }
 
 function injectStyles() {
@@ -308,7 +398,8 @@ async function copyTextFromTopPage(text) {
             await navigator.clipboard.writeText(text);
             return true;
         }
-    } catch (_) {
+    } catch (err) {
+        void err;
     }
 
     const textarea = document.createElement('textarea');
@@ -326,8 +417,9 @@ async function copyTextFromTopPage(text) {
     let ok = false;
     try {
         ok = document.execCommand('copy');
-    } catch (_) {
+    } catch (err) {
         ok = false;
+        void err;
     }
     document.body.removeChild(textarea);
     return ok;
@@ -388,6 +480,7 @@ function emitPageStateIfChanged(force = false) {
     if (!force && fingerprint === lastPageStateFingerprint) return;
     lastPageStateFingerprint = fingerprint;
     postToIframe('W2G_EVENT_PAGE_STATE', state);
+    emitToSidePanel('W2G_EVENT_PAGE_STATE', state);
 }
 
 function tryApplyQualityLabel(label) {
@@ -458,80 +551,11 @@ function handleIframeMessage(event) {
     // 安全检查
     if (!event.data || !event.data.type) return;
 
+    const iframe = document.getElementById(IFRAME_ID);
+    if (!iframe || event.source !== iframe.contentWindow) return;
+
     const { type, payload } = event.data;
-    const video = findMainVideo();
-
-    const safePlay = (targetVideo) => {
-        if (!targetVideo) return;
-        const playPromise = targetVideo.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-            playPromise.catch((err) => {
-                console.warn('[W2G] play() blocked by browser autoplay policy:', err?.message || err);
-            });
-        }
-    };
-
-    switch (type) {
-        case 'W2G_COMMAND_PLAY':
-            safePlay(video);
-            break;
-        case 'W2G_COMMAND_PAUSE':
-            if(video) video.pause();
-            break;
-        case 'W2G_COMMAND_SEEK':
-            if (video && typeof payload === 'number') {
-                // 兼容两种格式：0~1 的进度百分比，或绝对秒数
-                const nextTime = payload <= 1 ? payload * video.duration : payload;
-                video.currentTime = nextTime;
-                if (video.playbackRate !== 1) video.playbackRate = 1;
-            }
-            break;
-        case 'W2G_COMMAND_SYNC':
-            if (video && payload) {
-                const targetTime = payload.isTime
-                    ? payload.played
-                    : payload.played * video.duration;
-                if (typeof targetTime === 'number') {
-                    const driftSeconds = targetTime - video.currentTime;
-                    const absDrift = Math.abs(driftSeconds);
-
-                    if (payload.playing) {
-                        if (absDrift > SOFT_SYNC_MAX_DRIFT_SECONDS) {
-                            video.currentTime = targetTime;
-                            if (video.playbackRate !== 1) video.playbackRate = 1;
-                        } else if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
-                            const nextRate = driftSeconds > 0 ? SOFT_SYNC_FAST_RATE : SOFT_SYNC_SLOW_RATE;
-                            if (video.playbackRate !== nextRate) video.playbackRate = nextRate;
-                        } else if (video.playbackRate !== 1) {
-                            video.playbackRate = 1;
-                        }
-                    } else {
-                        if (absDrift > SOFT_SYNC_STABLE_EPSILON_SECONDS) {
-                            video.currentTime = targetTime;
-                        }
-                        if (video.playbackRate !== 1) video.playbackRate = 1;
-                    }
-                }
-                if (payload.playing && video.paused) safePlay(video);
-                if (!payload.playing && !video.paused) video.pause();
-            }
-            break;
-        case 'W2G_COMMAND_MINIMIZE':
-            toggleMinimize();
-            break;
-        case 'W2G_COMMAND_CLOSE':
-            toggleUI(); // 关闭逻辑与 toggle 相同
-            break;
-        case 'W2G_COPY_TEXT':
-            copyTextFromTopPage(typeof payload === 'string' ? payload : '')
-                .then((ok) => {
-                    postToIframe('W2G_COPY_RESULT', { ok });
-                });
-            break;
-        case 'W2G_COMMAND_PAGE_STATE':
-            applyRemotePageState(payload);
-            break;
-    }
+    handleW2GCommand(type, payload);
 }
 
 // 监听页面视频事件
@@ -547,6 +571,7 @@ function setupVideoListener() {
     const notifyIframe = (type, data) => {
         // 即使最小化也持续发送事件，保证 MQTT 同步不中断
         postToIframe(type, data);
+        emitToSidePanel(type, data);
     };
 
     const notifyBufferingStart = () => {

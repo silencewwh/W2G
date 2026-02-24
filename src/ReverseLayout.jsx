@@ -43,7 +43,7 @@ export default function ReverseLayout({ children, isTransitioning = false }) {
           </div>
         </div>
       )}
-      <div className={`app-container ${isTransitioning ? 'content-blur' : ''}`} style={{ width: '400px', height: '600px', overflow: 'hidden' }}>
+      <div className={`app-container ${isTransitioning ? 'content-blur' : ''}`} style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
         {children}
       </div>
     </>

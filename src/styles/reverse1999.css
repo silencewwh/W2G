@@ -35,8 +35,8 @@ body {
 .app-container {
   position: relative;
   z-index: 10;
-  width: 400px;
-  height: 600px;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -208,6 +208,29 @@ body {
 .btn-icon:hover {
     background: rgba(203, 161, 104, 0.2) !important;
     box-shadow: 0 0 10px rgba(203, 161, 104, 0.3);
+}
+
+/* 独立窗口：可控标签页下拉框 */
+.tab-select {
+  width: 100%;
+  background: var(--panel-bg);
+  border: 1px solid var(--accent-gold-dim);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.tab-select:focus {
+  border-color: var(--accent-gold);
+  box-shadow: var(--magical-glow);
+}
+
+.tab-select option {
+  color: var(--text-primary);
+  background: var(--bg-color);
 }
 
 /* 布局网格 (房间页) */
